@@ -1,0 +1,274 @@
+import { useState } from "react";
+import {
+  BookPlus,
+  Check,
+  FileJson,
+  Layers3,
+  ShieldCheck,
+  Upload,
+  Users,
+  X,
+} from "lucide-react";
+
+const sampleBook = {
+  title: "新词书名称",
+  description: "词书说明",
+  topics: [
+    {
+      id: "topic-1",
+      label: "单元名称",
+      ru: "Раздел",
+      color: "#2f5f50",
+      soft: "#dbe8e2",
+    },
+  ],
+  words: [
+    {
+      id: "word-1",
+      number: 1,
+      ru: "привет",
+      zh: "你好",
+      pos: "感叹词",
+      transliteration: "privet",
+      topic: "topic-1",
+      unitId: "topic-1",
+      unitLabel: "单元名称",
+      level: "核心",
+      examples: [
+        { ru: "Привет, как дела?", zh: "你好，最近怎么样？" },
+        { ru: "Он сказал мне привет.", zh: "他向我打了招呼。" },
+      ],
+      derived: "派生变化",
+      synonyms: "同义替换",
+      phrases: "常用短语",
+    },
+  ],
+};
+
+function WordbookCreateModal({ open, onClose, onSubmit }) {
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
+  const [jsonText, setJsonText] = useState("");
+  const [error, setError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [preview, setPreview] = useState(null);
+
+  function parseJson(value) {
+    try {
+      const parsed = JSON.parse(value);
+      const words = Array.isArray(parsed) ? parsed : parsed.words;
+      setPreview({
+        words: Array.isArray(words) ? words.length : 0,
+        topics: Array.isArray(parsed?.topics) ? parsed.topics.length : 0,
+      });
+      setError("");
+      return parsed;
+    } catch {
+      setPreview(null);
+      setError("JSON 格式不正确");
+      return null;
+    }
+  }
+
+  async function loadFile(file) {
+    if (!file) return;
+    const text = await file.text();
+    setJsonText(text);
+    parseJson(text);
+  }
+
+  async function submit(event) {
+    event.preventDefault();
+    const parsed = parseJson(jsonText);
+    if (!parsed) return;
+    setSubmitting(true);
+    try {
+      const payload = Array.isArray(parsed)
+        ? { title, description, words: parsed }
+        : { ...parsed, title: title || parsed.title, description: description || parsed.description };
+      await onSubmit(payload);
+      setTitle("");
+      setDescription("");
+      setJsonText("");
+      setPreview(null);
+      onClose();
+    } catch (submitError) {
+      setError(submitError.message || "新增词书失败");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div className={`admin-modal-layer ${open ? "open" : ""}`} aria-hidden={!open}>
+      <button className="admin-modal-scrim" onClick={onClose} aria-label="关闭新增词书" />
+      <form className="admin-modal" onSubmit={submit} role="dialog" aria-modal="true">
+        <header>
+          <div>
+            <span className="eyebrow-text dark">НОВЫЙ СЛОВАРЬ</span>
+            <h2>新增兼容词书</h2>
+          </div>
+          <button type="button" className="icon-button" onClick={onClose} aria-label="关闭">
+            <X size={18} />
+          </button>
+        </header>
+
+        <div className="admin-form-grid">
+          <label className="admin-input">
+            <span>词书名称</span>
+            <input value={title} onChange={(event) => setTitle(event.target.value)} />
+          </label>
+          <label className="admin-input">
+            <span>词书说明</span>
+            <input value={description} onChange={(event) => setDescription(event.target.value)} />
+          </label>
+        </div>
+
+        <div className="admin-json-heading">
+          <div>
+            <span className="eyebrow-text dark">SCHEMA V1</span>
+            <h3>粘贴或上传 JSON</h3>
+          </div>
+          <label className="admin-upload">
+            <Upload size={15} />
+            上传文件
+            <input
+              type="file"
+              accept=".json,application/json"
+              onChange={(event) => loadFile(event.target.files?.[0])}
+            />
+          </label>
+        </div>
+        <textarea
+          className="admin-json"
+          value={jsonText}
+          onChange={(event) => {
+            setJsonText(event.target.value);
+            parseJson(event.target.value);
+          }}
+          placeholder={JSON.stringify(sampleBook, null, 2)}
+        />
+        <div className="admin-json-footer">
+          <button
+            type="button"
+            className="text-button"
+            onClick={() => {
+              const value = JSON.stringify(sampleBook, null, 2);
+              setJsonText(value);
+              parseJson(value);
+            }}
+          >
+            <FileJson size={15} />
+            填入模板
+          </button>
+          {preview ? (
+            <span>
+              <Check size={14} />
+              {preview.words} 个词 · {preview.topics || "自动"} 个单元
+            </span>
+          ) : null}
+        </div>
+        {error ? <div className="login-error">{error}</div> : null}
+        <footer>
+          <span>兼容当前三轮练习、分组难度和两轮复习流程。</span>
+          <button
+            className="primary-button"
+            disabled={
+              submitting ||
+              !jsonText.trim() ||
+              (!title.trim() && !/"title"\s*:/.test(jsonText))
+            }
+          >
+            <BookPlus size={17} />
+            {submitting ? "正在新增…" : "新增并发布"}
+          </button>
+        </footer>
+      </form>
+    </div>
+  );
+}
+
+export function AdminPage({ user, wordbooks, onCreateWordbook }) {
+  const [modalOpen, setModalOpen] = useState(false);
+
+  return (
+    <div className="page admin-page">
+      <section className="page-intro admin-intro">
+        <div>
+          <p className="intro-ru">АДМИНИСТРАТОР</p>
+          <h1>词书与账号管理</h1>
+          <p className="intro-subtitle">
+            新增词书会立即出现在用户词书选择器中，并沿用当前练习与复习数据格式。
+          </p>
+        </div>
+        <button className="primary-button" onClick={() => setModalOpen(true)}>
+          <BookPlus size={17} />
+          新增词书
+        </button>
+      </section>
+
+      <section className="admin-summary">
+        <article>
+          <span><ShieldCheck size={18} /></span>
+          <div>
+            <small>当前角色</small>
+            <strong>管理员</strong>
+            <p>{user.username}</p>
+          </div>
+        </article>
+        <article>
+          <span><Layers3 size={18} /></span>
+          <div>
+            <small>已发布词书</small>
+            <strong>{wordbooks.length}</strong>
+            <p>所有用户可选择</p>
+          </div>
+        </article>
+        <article>
+          <span><Users size={18} /></span>
+          <div>
+            <small>数据隔离</small>
+            <strong>按账号</strong>
+            <p>独立保存进度</p>
+          </div>
+        </article>
+      </section>
+
+      <section className="admin-book-section">
+        <div className="section-heading">
+          <div>
+            <span className="eyebrow-text dark">СЛОВАРИ</span>
+            <h2>词书列表</h2>
+          </div>
+          <span className="admin-schema-note">SCHEMA V1</span>
+        </div>
+        <div className="admin-book-grid">
+          {wordbooks.map((book) => (
+            <article className="admin-book-card" key={book.id}>
+              <span className="admin-book-icon">
+                <BookPlus size={19} />
+              </span>
+              <div>
+                <strong>{book.title}</strong>
+                <p>{book.description}</p>
+                <small>
+                  {book.wordCount} 个词 · {book.topicCount} 个单元
+                </small>
+              </div>
+              <span className="admin-published">
+                <Check size={13} />
+                已发布
+              </span>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <WordbookCreateModal
+        open={modalOpen}
+        onClose={() => setModalOpen(false)}
+        onSubmit={onCreateWordbook}
+      />
+    </div>
+  );
+}
