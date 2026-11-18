@@ -3,22 +3,29 @@ import seedWordbooks from "../../server/seed/wordbooks.json";
 const encoder = new TextEncoder();
 const SESSION_COOKIE = "slovo_session";
 const SESSION_DAYS = 30;
-const PBKDF2_ITERATIONS = 120000;
+// Cloudflare Workers Web Crypto supports at most 100,000 PBKDF2 iterations.
+const PBKDF2_ITERATIONS = 100000;
 
 const seedUsers = [
   {
     id: "admin-root",
     username: "13144666848",
     role: "admin",
-    salt: "4b7480fa62be5e414d4fc590712dc450",
-    hash: "49d95644627c121bb95fc54f4bdd669eadb763c136356daf066af675c51f1838",
+    salt: "f38981cc972f61515d89be52aedd30a8",
+    hash: "1fbe9160d776b9894b3a15bf4a83fe46bcf1008ce6e20d95aa9c24e520893869",
+    legacySalt: "4b7480fa62be5e414d4fc590712dc450",
+    legacyHash:
+      "49d95644627c121bb95fc54f4bdd669eadb763c136356daf066af675c51f1838",
   },
   {
     id: "user-lvziyi",
     username: "lvziyi",
     role: "user",
-    salt: "8525757c406f81f5e17170f9acf416c0",
-    hash: "be0d0a589996da32f6d7db96fc35471ba137c5f3c6be6298b91d247dfe61b1b9",
+    salt: "b9c5338b4b8ba8ee8e0c5400c0c99e74",
+    hash: "8e723882d05b600c251e1a85f7460558502b3c2e6ba7eac8fd1fe22285982d4f",
+    legacySalt: "8525757c406f81f5e17170f9acf416c0",
+    legacyHash:
+      "be0d0a589996da32f6d7db96fc35471ba137c5f3c6be6298b91d247dfe61b1b9",
   },
 ];
 
@@ -68,7 +75,7 @@ function constantTimeEqual(left, right) {
   return difference === 0;
 }
 
-async function derivePassword(password, salt) {
+async function derivePassword(password, salt, iterations = PBKDF2_ITERATIONS) {
   const key = await crypto.subtle.importKey(
     "raw",
     encoder.encode(password),
@@ -80,7 +87,7 @@ async function derivePassword(password, salt) {
     {
       name: "PBKDF2",
       salt: hexToBytes(salt),
-      iterations: PBKDF2_ITERATIONS,
+      iterations,
       hash: "SHA-256",
     },
     key,
@@ -170,6 +177,28 @@ async function ensureSchema(db) {
 }
 
 async function ensureSeed(db) {
+  for (const user of seedUsers) {
+    // Migrate the original seeded accounts without touching passwords users
+    // changed after the initial release.
+    await db
+      .prepare(
+        `UPDATE users
+         SET password_salt = ?, password_hash = ?, password_iterations = ?
+         WHERE id = ? AND password_salt = ? AND password_hash = ?
+           AND password_iterations > ?`,
+      )
+      .bind(
+        user.salt,
+        user.hash,
+        PBKDF2_ITERATIONS,
+        user.id,
+        user.legacySalt,
+        user.legacyHash,
+        PBKDF2_ITERATIONS,
+      )
+      .run();
+  }
+
   const countRow = await db
     .prepare("SELECT COUNT(*) AS count FROM users")
     .first();
@@ -424,7 +453,11 @@ async function handleApi(context) {
       .bind(String(body.username || ""))
       .first();
     const passwordHash = user
-      ? await derivePassword(String(body.password || ""), user.password_salt)
+      ? await derivePassword(
+          String(body.password || ""),
+          user.password_salt,
+          user.password_iterations,
+        )
       : null;
     if (!user || !constantTimeEqual(passwordHash, user.password_hash)) {
       return jsonResponse(401, { error: "账号或密码错误" });
@@ -523,6 +556,7 @@ async function handleApi(context) {
     const currentHash = await derivePassword(
       String(body.currentPassword || ""),
       userRecord.password_salt,
+      userRecord.password_iterations,
     );
     if (!constantTimeEqual(currentHash, userRecord.password_hash)) {
       return jsonResponse(400, { error: "当前密码不正确" });
