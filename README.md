@@ -45,6 +45,35 @@ npm run build
 npm run preview
 ```
 
+## Cloudflare Pages 部署
+
+项目包含 Cloudflare Pages Functions：
+
+- `functions/api/[[path]].js` 提供登录、账号、词书和学习进度 API
+- `migrations/0001_initial.sql` 提供 D1 表结构
+- 账号密码使用 PBKDF2 哈希，会话令牌在 D1 中只保存 SHA-256 哈希
+
+首次配置：
+
+```bash
+npx wrangler d1 create russian-vocab-db
+```
+
+在 Cloudflare Pages 项目的 **Settings → Bindings** 中添加：
+
+- 类型：D1 database
+- 变量名：`DB`
+- 数据库：`russian-vocab-db`
+
+也可以把创建后的 `database_id` 写入 `wrangler.toml` 的 `[[d1_databases]]` 配置。重新部署后，Pages Functions 会在第一次请求时自动建表并导入 6 本内置词书。
+
+本地模拟：
+
+```bash
+npm run build
+npx wrangler pages dev dist --d1 DB
+```
+
 ## 复习算法
 
 算法位于 `src/lib/srs.js`。它不是固定日历，而是为每个单词独立维护：

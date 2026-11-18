@@ -53,6 +53,25 @@ const defaultProgress = () => ({
   dailyGoal: 12,
 });
 
+const seedUsers = [
+  {
+    id: "admin-root",
+    username: "13144666848",
+    role: "admin",
+    passwordSalt: "3aa5564335f1a14591e9ced9cf1c765b",
+    passwordHash:
+      "5c9c105876382a16d4735b26ecb55f75bacf0cb5458069a3e2d620b8cda4b5e0c92b9b5d6e07674255507d16b239447a73162371ab38bc97dab2b558a940634b",
+  },
+  {
+    id: "user-lvziyi",
+    username: "lvziyi",
+    role: "user",
+    passwordSalt: "70c1bf873fc4e9ecfbc88388f7bd9e89",
+    passwordHash:
+      "34ad1a9d54344847bcbdca50e440b8c774259484bdf8822809b14ceb6955105e9716164b20828182defa0f3117f5629e16145c3e724609a0a64e4735793b6130",
+  },
+];
+
 function passwordRecord(password) {
   const salt = randomBytes(16).toString("hex");
   return {
@@ -68,20 +87,10 @@ function checkPassword(user, password) {
 }
 
 function createSeedDatabase() {
-  const admin = {
-    id: "admin-root",
-    username: "13144666848",
-    role: "admin",
+  const [admin, lvziyi] = seedUsers.map((user) => ({
+    ...user,
     createdAt: new Date().toISOString(),
-    ...passwordRecord("xu5586026"),
-  };
-  const lvziyi = {
-    id: "user-lvziyi",
-    username: "lvziyi",
-    role: "user",
-    createdAt: new Date().toISOString(),
-    ...passwordRecord("12345678"),
-  };
+  }));
   const books = JSON.parse(JSON.stringify(builtInBooks));
   return {
     version: 1,
