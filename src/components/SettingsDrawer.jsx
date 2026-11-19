@@ -103,6 +103,17 @@ export function SettingsDrawer({
               <Headphones size={17} />
               试听 “Путешествие”
             </button>
+            <details className="voice-help">
+              <summary>手机没有声音或提示不支持语音合成</summary>
+              <p>
+                请改用手机自带的外部浏览器：iPhone 使用 Safari，Android
+                使用 Google Chrome，不要使用微信、QQ 等 App 内置浏览器。
+              </p>
+              <p>
+                iPhone：设置 → 辅助功能 → 朗读内容 → 声音 → 俄语。
+                Android：设置 → 系统 → 语言和输入法 → 文字转语音输出，安装俄语语音。
+              </p>
+            </details>
           </section>
 
           <section className="settings-group">
