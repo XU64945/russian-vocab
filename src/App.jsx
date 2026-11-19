@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AdminPage } from "./components/AdminPage";
 import { Dashboard } from "./components/Dashboard";
 import { FavoritesPage } from "./components/FavoritesPage";
@@ -127,6 +127,7 @@ function App() {
   });
   const [toast, setToast] = useState("");
   const [now, setNow] = useState(Date.now);
+  const previousFocusRef = useRef(null);
 
   const book = workspace?.book || null;
   const words = useMemo(() => book?.words || [], [book]);
@@ -208,6 +209,66 @@ function App() {
     document.body.style.overflow = "hidden";
     return () => {
       document.body.style.overflow = previousOverflow;
+    };
+  }, [detailWord, passwordOpen, practiceSetupOpen, settingsOpen]);
+
+  useEffect(() => {
+    const activeDialog = passwordOpen
+      ? ".password-modal"
+      : practiceSetupOpen
+        ? ".practice-setup-modal"
+        : detailWord
+          ? ".word-detail-drawer"
+          : settingsOpen
+            ? ".settings-drawer"
+            : null;
+    if (!activeDialog) return undefined;
+
+    previousFocusRef.current = document.activeElement;
+    const dialog = document.querySelector(activeDialog);
+    if (!dialog) return undefined;
+    const getFocusable = () =>
+      Array.from(
+        dialog.querySelectorAll(
+          'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [href], [tabindex]:not([tabindex="-1"])',
+        ),
+      ).filter((element) => element instanceof HTMLElement && element.offsetParent !== null);
+    const focusTimer = window.setTimeout(() => {
+      const focusable = getFocusable();
+      (dialog.querySelector("[autofocus]") || focusable[0] || dialog).focus?.();
+    }, 40);
+
+    const handleKeydown = (event) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        if (passwordOpen) setPasswordOpen(false);
+        else if (practiceSetupOpen) setPracticeSetupOpen(false);
+        else if (detailWord) setDetailWord(null);
+        else if (settingsOpen) setSettingsOpen(false);
+        return;
+      }
+      if (event.key !== "Tab") return;
+      const focusable = getFocusable();
+      if (!focusable.length) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+
+    document.addEventListener("keydown", handleKeydown);
+    return () => {
+      window.clearTimeout(focusTimer);
+      document.removeEventListener("keydown", handleKeydown);
+      const previous = previousFocusRef.current;
+      if (previous instanceof HTMLElement && previous.isConnected) {
+        window.setTimeout(() => previous.focus(), 0);
+      }
     };
   }, [detailWord, passwordOpen, practiceSetupOpen, settingsOpen]);
 
@@ -698,8 +759,7 @@ function App() {
         lastStudyDate: date,
       };
     });
-    setView("review");
-    setToast("本次复习完成，已按 1、2、4、15 天节点重新安排。");
+    setToast("本次复习完成，已根据答题表现重新安排复习间隔。");
   }, [wordMap]);
 
   const navigate = useCallback((nextView) => {
@@ -989,7 +1049,11 @@ function App() {
 
   return (
     <WordbookProvider book={book}>
-      <div className="app-shell">
+      <div
+        className={`app-shell ${
+          view === "study" || view === "reviewSession" ? "is-immersive" : ""
+        }`}
+      >
         <Sidebar
           activeView={view === "reviewSession" ? "review" : view}
           onNavigate={navigate}
@@ -1004,6 +1068,7 @@ function App() {
         <main className="main-shell">
           <TopBar
             date={dateLabel()}
+            pageName={pageName}
             onOpenSettings={openSettings}
             wordbooks={workspace.wordbooks}
             activeBookId={workspace.activeBookId}

@@ -42,7 +42,7 @@ export function LoginScreen({ onLogin, onRegister, message = "" }) {
         </div>
         <div className="login-copy">
           <span>СЛОВА · ПАМЯТЬ · ПРАКТИКА</span>
-          <h1>让每个账号，<br />都有自己的俄语进度。</h1>
+          <h1>让每个账号，<br />都有自己的俄语进度</h1>
           <p>
             分组练习、三轮测验、复习池和动态间隔都会按账号独立保存。管理员可以为所有用户增加新的兼容词书。
           </p>

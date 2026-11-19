@@ -2,6 +2,7 @@ import {
   ArrowRight,
   ArrowUpRight,
   BookOpen,
+  Flame,
   Headphones,
   Play,
   RotateCcw,
@@ -9,12 +10,15 @@ import {
   Volume2,
 } from "lucide-react";
 import { useWordbook } from "../context/WordbookContext";
+import { AnimatedNumber } from "./ui/AnimatedNumber";
+import { BorderBeam } from "./ui/BorderBeam";
+import { Disclosure } from "./ui/Disclosure";
 
 function ProgressRing({ value }) {
   return (
     <div className="progress-ring" style={{ "--progress": `${value * 3.6}deg` }}>
       <div className="progress-ring-inner">
-        <strong>{value}%</strong>
+        <strong><AnimatedNumber value={value} suffix="%" /></strong>
         <span>今日</span>
       </div>
     </div>
@@ -54,26 +58,27 @@ export function Dashboard({
           <p className="intro-ru">Доброе утро</p>
           <h1>
             {activeQuiz
-              ? "继续上次未完成的练习。"
-              : `今天计划 ${groupsPerDay} 组，共 ${groupSize * groupsPerDay} 个俄语词。`}
+              ? "从上次停下的地方继续"
+              : `今天，和 ${groupSize * groupsPerDay} 个俄语词见面`}
           </h1>
           <p className="intro-subtitle">
             {activeQuiz
-              ? "学习位置已经保存，会从上次离开的轮次和题目继续。"
-              : "一组短练习，一点声音记忆。先完成今天的小目标，再去做别的。"}
+              ? "轮次、题目和学习位置已经保存在当前账号。"
+              : `${groupsPerDay} 组短练习，先清到期复习，再认识今天的新词。`}
           </p>
         </div>
         <button className="primary-button intro-cta" onClick={onOpenPracticeSetup}>
-          <span>{activeQuiz ? "继续上次练习" : "开始今日训练"}</span>
+          <span>{activeQuiz ? "继续今日学习" : "开始今日学习"}</span>
           <ArrowUpRight size={18} strokeWidth={1.9} />
         </button>
       </section>
 
       <section className="dashboard-top">
+        <BorderBeam className="word-beam">
         <article className="word-focus-card">
           <div className="word-card-header">
             <div>
-              <span className="eyebrow-text">СЛОВО ДНЯ</span>
+              <span className="eyebrow-text">СЛОВО ДНЯ · 今日单词</span>
               <span className="word-level">{word.level}</span>
             </div>
             <button className="round-audio-button light" onClick={() => onSpeak(word.ru)}>
@@ -109,6 +114,7 @@ export function Dashboard({
             </div>
           </div>
         </article>
+        </BorderBeam>
 
         <aside className="goal-card">
           <div className="goal-card-heading">
@@ -116,14 +122,18 @@ export function Dashboard({
               <span className="eyebrow-text dark">СЕГОДНЯ</span>
               <h2>今日节奏</h2>
             </div>
-            <span className="streak-number">{streak}</span>
+            <span className="streak-number">
+              <Flame size={16} />
+              <AnimatedNumber value={streak} />
+              <small>天</small>
+            </span>
           </div>
 
           <div className="goal-ring-row">
             <ProgressRing value={dailyPercent} />
             <div className="goal-copy">
               <strong>
-                {dailyCount} <span>/ {dailyGoal} 词</span>
+                <AnimatedNumber value={dailyCount} /> <span>/ {dailyGoal} 词</span>
               </strong>
               <p>
                 {dailyPercent >= 100
@@ -143,7 +153,7 @@ export function Dashboard({
             </div>
             <div>
               <span>已掌握</span>
-              <strong>{masteredCount}</strong>
+              <strong><AnimatedNumber value={masteredCount} /></strong>
               <small>/ {totalWords}</small>
             </div>
           </div>
@@ -233,13 +243,18 @@ export function Dashboard({
         </div>
 
         <div className="method-panel">
-          <Sparkles size={22} strokeWidth={1.6} />
-          <div>
-            <span className="eyebrow-text dark">АЛГОРИТМ</span>
-            <h2>根据记忆状态安排。</h2>
-            <p>
-              到期复习先出现；错词每隔三词穿插一次，未完成的轮次和题目会自动保存到账号。
-            </p>
+          <div className="method-icon">
+            <Sparkles size={22} strokeWidth={1.6} />
+          </div>
+          <div className="method-copy">
+            <span className="eyebrow-text dark">АЛГОРИТМ · 记忆节奏</span>
+            <h2>在你快要忘记时，再遇见一次</h2>
+            <Disclosure title="查看复习如何安排" defaultOpen={false}>
+              <p>
+                到期复习先出现；错词每隔三词穿插一次。答错会提高下次出现频率，
+                未完成的轮次和题目会自动保存到账号。
+              </p>
+            </Disclosure>
           </div>
           <div className="method-icons" aria-hidden="true">
             <span>

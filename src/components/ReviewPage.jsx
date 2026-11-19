@@ -25,9 +25,9 @@ export function ReviewPage({
       <section className="page-intro review-intro">
         <div>
           <p className="intro-ru">ПОВТОРЕНИЕ</p>
-          <h1>练习过的词，会在这里再见。</h1>
+          <h1>练习过的词，会在这里再见</h1>
           <p className="intro-subtitle">
-            新词完成三轮后会按 1、2、4、15 天节点推送复习。每次复习包含词义与拼写两轮。
+            新词完成三轮后从 1、2、4、15 天基准节点进入复习，间隔会随答题表现动态调整。每次复习包含词义与拼写两轮。
           </p>
         </div>
         <div className="review-count-card">

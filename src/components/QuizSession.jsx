@@ -468,7 +468,7 @@ function QuizComplete({ score, onExit, onRestart, onNextGroup }) {
         <Sparkles size={31} />
       </span>
       <span className="eyebrow-text dark">ВСЕ ТРИ РАУНДА</span>
-      <h1>三轮完成。</h1>
+      <h1>三轮完成</h1>
       <p>
         这组词已经过词义辨认、汉译选词和乱序拼写。答错过的词已按你的表现重新安排复习。
       </p>

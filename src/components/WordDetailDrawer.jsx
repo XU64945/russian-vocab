@@ -184,7 +184,7 @@ export function WordDetailDrawer({
               </span>
               <div>
                 <small>СООБЩИТЬ ОБ ОШИБКЕ</small>
-                <h3>发现词条有误？</h3>
+                <h3>发现词条有误</h3>
               </div>
             </div>
             {correctionOpen ? (

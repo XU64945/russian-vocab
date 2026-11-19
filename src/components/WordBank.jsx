@@ -236,7 +236,7 @@ export function WordBank({
               type="search"
               value={query}
               onChange={(event) => updateFilter(setQuery, event.target.value)}
-              placeholder="输入俄语、中文、编号，或例句、派生、同义与短语…"
+              placeholder="搜索词、释义、例句或编号"
             />
             {query ? (
               <button

@@ -3,3 +3,9 @@ dist/
 .DS_Store
 *.log
 server/data/db.json
+.lsf/
+rounds/
+reviewer-evidence/
+copy/
+changes.md
+target.md

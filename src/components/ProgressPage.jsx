@@ -12,6 +12,8 @@ import {
   Volume2,
 } from "lucide-react";
 import { useWordbook } from "../context/WordbookContext";
+import { AnimatedNumber } from "./ui/AnimatedNumber";
+import { Disclosure } from "./ui/Disclosure";
 
 function getWeekDays(history) {
   const formatter = new Intl.DateTimeFormat("zh-CN", { weekday: "short" });
@@ -60,7 +62,7 @@ export function ProgressPage({
       <section className="page-intro progress-intro">
         <div>
           <p className="intro-ru">ПРОГРЕСС</p>
-          <h1>每一次回忆，都算数。</h1>
+          <h1>每一次回忆，都算数</h1>
           <p className="intro-subtitle">这里记录你真正练过的词，而不是看起来很漂亮的数字。</p>
         </div>
         <button className="primary-button" onClick={onStartStudy}>
@@ -73,7 +75,9 @@ export function ProgressPage({
         <article className="progress-hero">
           <div className="progress-hero-copy">
             <span className="eyebrow-text">ОБЩИЙ ПРОГРЕСС</span>
-            <strong className="progress-big-number">{completion}%</strong>
+            <strong className="progress-big-number">
+              <AnimatedNumber value={completion} suffix="%" />
+            </strong>
             <p>
               已掌握 {progress.mastered.length} / {totalWords} 个词。下一小步比一次学很多更重要。
             </p>
@@ -91,7 +95,7 @@ export function ProgressPage({
             <Flame size={19} />
           </span>
           <span>连续学习</span>
-          <strong>{progress.streak}</strong>
+          <strong><AnimatedNumber value={progress.streak} /></strong>
           <small>天</small>
         </article>
         <article className="metric-card">
@@ -99,7 +103,7 @@ export function ProgressPage({
             <Check size={19} />
           </span>
           <span>已掌握</span>
-          <strong>{progress.mastered.length}</strong>
+          <strong><AnimatedNumber value={progress.mastered.length} /></strong>
           <small>个词</small>
         </article>
         <article className="metric-card">
@@ -107,7 +111,7 @@ export function ProgressPage({
             <CalendarClock size={19} />
           </span>
           <span>到期复习</span>
-          <strong>{dueCount}</strong>
+          <strong><AnimatedNumber value={dueCount} /></strong>
           <small>个词</small>
         </article>
         <article className="metric-card">
@@ -115,7 +119,7 @@ export function ProgressPage({
             <RotateCcw size={19} />
           </span>
           <span>总复习次数</span>
-          <strong>{progress.totalReviews}</strong>
+          <strong><AnimatedNumber value={progress.totalReviews} /></strong>
           <small>次</small>
         </article>
       </section>
@@ -194,36 +198,19 @@ export function ProgressPage({
         </div>
 
         <div className="srs-steps">
-          <article>
-            <span className="srs-step-icon">
-              <CalendarClock size={19} />
-            </span>
-            <div>
-              <small>01 · ОЧЕРЕДЬ</small>
-              <h3>到期复习优先</h3>
-              <p>完成三轮练习后，新词会在第 1、2、4、15 天按节点进入复习。</p>
-            </div>
-          </article>
-          <article>
-            <span className="srs-step-icon">
-              <Gauge size={19} />
-            </span>
-            <div>
-              <small>02 · ИНТЕРВАЛ</small>
-              <h3>答对后拉长</h3>
-              <p>完成练习后再通过两次复习，才会标记为“已掌握”；之后继续按 4、15 天等节点复习。</p>
-            </div>
-          </article>
-          <article>
-            <span className="srs-step-icon">
-              <Layers3 size={19} />
-            </span>
-            <div>
-              <small>03 · ВОЗВРАТ</small>
-              <h3>答错后回补</h3>
-              <p>答错不会清空复习阶段，但会在明天优先复习，并自动收进错题本、穿插回练习。</p>
-            </div>
-          </article>
+          <Disclosure
+            eyebrow="01 · ОЧЕРЕДЬ"
+            title="到期复习优先"
+            defaultOpen
+          >
+            <p>完成三轮练习后，新词从第 1 天的基准节点开始复习；答对会逐步拉长间隔，答错会优先回补。</p>
+          </Disclosure>
+          <Disclosure eyebrow="02 · ИНТЕРВАЛ" title="答对后拉长">
+            <p>完成练习后再通过两次复习，才会标记为“已掌握”；之后继续按 4、15 天等节点复习。</p>
+          </Disclosure>
+          <Disclosure eyebrow="03 · ВОЗВРАТ" title="答错后回补">
+            <p>答错不会清空复习阶段，但会在明天优先复习，并自动收进错题本、穿插回练习。</p>
+          </Disclosure>
         </div>
       </section>
 

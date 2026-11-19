@@ -1,0 +1,104 @@
+{
+  "version": 1,
+  "project": "СЛОВО Russian vocabulary",
+  "visual_system": {
+    "theme": "blue study room",
+    "surface": "solid navy word plate on cool white and mist-gray fields",
+    "lighting": "soft, diffuse, no simulated 3D scene",
+    "materials": "flat editorial surfaces, restrained shadows, Literata Cyrillic typography"
+  },
+  "assets": [
+    {
+      "id": "ui-icons",
+      "purpose": "Navigation, audio, search, status, actions and dialog controls",
+      "kind": "icon-library",
+      "library": "lucide-react",
+      "version": "^0.468.0",
+      "license": "ISC",
+      "project_paths": [
+        "src/components/*.jsx",
+        "src/components/ui/*.jsx"
+      ],
+      "handwritten_svg": false,
+      "check": "node C:/Users/11026/.codex/skills/lsf-website-design/scripts/check-icons.mjs --src src",
+      "result": "passed: no handwritten SVG icons"
+    },
+    {
+      "id": "latin-ui-font",
+      "purpose": "Chinese and Latin interface typography",
+      "kind": "web-font",
+      "library": "@fontsource-variable/manrope",
+      "version": "^5.2.8",
+      "license": "SIL Open Font License 1.1",
+      "project_paths": ["src/main.jsx"],
+      "static": true
+    },
+    {
+      "id": "cyrillic-display-font",
+      "purpose": "Russian word hierarchy and Russian editorial labels; supports Cyrillic Unicode",
+      "kind": "web-font",
+      "library": "@fontsource-variable/literata",
+      "version": "^5.2.8",
+      "license": "SIL Open Font License 1.1",
+      "project_paths": ["src/main.jsx", "src/styles.css"],
+      "static": true,
+      "stress_mark_note": "The current corpus contains no combining acute accents; CSS uses the same Literata fallback stack so U+0301 text remains supported if vocabulary is updated."
+    },
+    {
+      "id": "count-up",
+      "purpose": "Dashboard and progress metric reveal",
+      "kind": "source-adapted-motion",
+      "source": "React Bits CountUp",
+      "source_path": "work/ui-sources/react-bits/src/content/TextAnimations/CountUp/CountUp.jsx",
+      "project_paths": ["src/components/ui/AnimatedNumber.jsx"],
+      "trigger": "in view once",
+      "dynamic": true,
+      "reduced_motion": "shows final value immediately"
+    },
+    {
+      "id": "border-beam",
+      "purpose": "Slow emphasis around the Today word card",
+      "kind": "source-adapted-motion",
+      "source": "Libraries.dev BorderBeam",
+      "source_path": "work/ui-sources/libraries-dev/packages/border-beam/src/BorderBeam.tsx",
+      "project_paths": ["src/components/ui/BorderBeam.jsx"],
+      "trigger": "continuous on the main word card",
+      "dynamic": true,
+      "reduced_motion": "hidden"
+    },
+    {
+      "id": "disclosure",
+      "purpose": "Review-method explanations without pushing core actions down",
+      "kind": "source-adapted-interaction",
+      "sources": [
+        "work/ui-sources/shadcn-ui/apps/v4/registry/bases/radix/ui/accordion.tsx",
+        "work/ui-sources/obsidian-ui/src/components/analytics-dashboard/details.tsx"
+      ],
+      "project_paths": ["src/components/ui/Disclosure.jsx"],
+      "trigger": "click and keyboard",
+      "dynamic": true
+    },
+    {
+      "id": "morph-select",
+      "purpose": "Wordbook switching",
+      "kind": "source-adapted-interaction",
+      "source": "Transitions.dev Dropdown menu morph",
+      "source_path": "work/ui-sources/transitions-dev/transitions/dropdown-menu-morph/index.html",
+      "project_paths": ["src/components/ui/MorphSelect.jsx"],
+      "trigger": "click, outside click, Escape",
+      "dynamic": true
+    },
+    {
+      "id": "mobile-more-slide-over",
+      "purpose": "Secondary mobile navigation",
+      "kind": "source-adapted-interaction",
+      "source": "ObsidianUI Analytics details slide-over/disclosure",
+      "source_path": "work/ui-sources/obsidian-ui/src/components/analytics-dashboard/details.tsx",
+      "project_paths": ["src/components/Sidebar.jsx", "src/styles.css"],
+      "trigger": "More button, scrim, Escape",
+      "dynamic": true
+    }
+  ],
+  "generated_images": [],
+  "notes": "This application is intentionally typography-led. No decorative raster generation was needed; the product’s Russian word content and real learning-state UI are the primary visual material."
+}

@@ -381,7 +381,7 @@ export function ReviewSession({
             <Check size={32} />
           </span>
           <span className="eyebrow-text dark">ПОВТОРЕНИЕ ЗАВЕРШЕНО</span>
-          <h1>两轮复习完成。</h1>
+          <h1>两轮复习完成</h1>
           <p>这批复习词已完成辨认和拼写，接下来会按新的记忆状态重新安排间隔。</p>
           <div className="quiz-complete-score">
             <span>
