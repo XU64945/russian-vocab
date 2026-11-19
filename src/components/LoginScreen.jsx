@@ -50,7 +50,7 @@ export function LoginScreen({ onLogin, onRegister, message = "" }) {
         <div className="login-feature-list">
           <span>
             <BookOpen size={17} />
-            6 本词书 · 3000 词
+            8 本词书 · 4000 词
           </span>
           <span>
             <KeyRound size={17} />
