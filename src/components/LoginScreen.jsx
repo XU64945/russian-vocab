@@ -1,5 +1,19 @@
 import { useState } from "react";
-import { ArrowRight, BookOpen, Eye, EyeOff, KeyRound, UserRound } from "lucide-react";
+import {
+  ArrowRight,
+  BookOpen,
+  Eye,
+  EyeOff,
+  Headphones,
+  KeyRound,
+  UserRound,
+  X,
+} from "lucide-react";
+import {
+  REGISTER_BROWSER_TIP_KEY,
+  hasSeenNotice,
+  markNoticeSeen,
+} from "../lib/notices";
 
 export function LoginScreen({ onLogin, onRegister, message = "" }) {
   const [mode, setMode] = useState("login");
@@ -9,6 +23,12 @@ export function LoginScreen({ onLogin, onRegister, message = "" }) {
   const [showPassword, setShowPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const [showBrowserTip, setShowBrowserTip] = useState(false);
+
+  function dismissBrowserTip() {
+    setShowBrowserTip(false);
+    markNoticeSeen(REGISTER_BROWSER_TIP_KEY);
+  }
 
   async function submit(event) {
     event.preventDefault();
@@ -75,6 +95,27 @@ export function LoginScreen({ onLogin, onRegister, message = "" }) {
           </div>
 
           {message ? <div className="login-message">{message}</div> : null}
+
+          {mode === "register" && showBrowserTip ? (
+            <aside className="register-browser-tip" role="status">
+              <span className="register-browser-tip-icon" aria-hidden="true">
+                <Headphones size={17} />
+              </span>
+              <div>
+                <strong>建议使用外部浏览器</strong>
+                <p>
+                  iPhone 用 Safari，Android 用 Chrome；微信、QQ 内可能无法播放语音。
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={dismissBrowserTip}
+                aria-label="关闭浏览器提示"
+              >
+                <X size={15} />
+              </button>
+            </aside>
+          ) : null}
 
           <label className="login-field">
             <span>账号</span>
@@ -152,7 +193,15 @@ export function LoginScreen({ onLogin, onRegister, message = "" }) {
             type="button"
             className="login-mode-switch"
             onClick={() => {
-              setMode((current) => (current === "login" ? "register" : "login"));
+              const nextMode = mode === "login" ? "register" : "login";
+              setMode(nextMode);
+              if (nextMode === "register") {
+                const shouldShow = !hasSeenNotice(REGISTER_BROWSER_TIP_KEY);
+                setShowBrowserTip(shouldShow);
+                if (shouldShow) markNoticeSeen(REGISTER_BROWSER_TIP_KEY);
+              } else {
+                setShowBrowserTip(false);
+              }
               setError("");
               setConfirmPassword("");
             }}

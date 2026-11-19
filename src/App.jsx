@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Headphones, X } from "lucide-react";
 import { AdminPage } from "./components/AdminPage";
 import { Dashboard } from "./components/Dashboard";
 import { FavoritesPage } from "./components/FavoritesPage";
@@ -21,12 +22,21 @@ import { WrongBookPage } from "./components/WrongBookPage";
 import { WordbookProvider } from "./context/WordbookContext";
 import { api } from "./lib/api";
 import {
+  getWordAudioUrl,
+  normalizeAudioText,
+} from "./lib/audio";
+import {
   dateLabel,
   defaultProgress,
   loadSettings,
   saveSettings,
   todayKey,
 } from "./lib/storage";
+import {
+  AUDIO_BROWSER_TIP_KEY,
+  hasSeenNotice,
+  markNoticeSeen,
+} from "./lib/notices";
 import {
   applyReview,
   getDueWords,
@@ -145,6 +155,7 @@ function App() {
     spellingDifficulty: "easy",
   });
   const [toast, setToast] = useState("");
+  const [audioNotice, setAudioNotice] = useState(null);
   const [now, setNow] = useState(Date.now);
   const [libraryState, setLibraryState] = useState({
     status: "idle",
@@ -153,6 +164,7 @@ function App() {
   });
   const previousFocusRef = useRef(null);
   const libraryLoadKeyRef = useRef("");
+  const audioElementRef = useRef(null);
 
   const book = workspace?.book || null;
   const words = useMemo(() => book?.words || [], [book]);
@@ -186,6 +198,21 @@ function App() {
       }),
     [libraryState.books],
   );
+  const audioWordIdByText = useMemo(() => {
+    const source =
+      libraryState.status === "ready" ? libraryWords : words;
+    const map = new Map(
+      source
+        .filter((word) => word?.id && word?.ru)
+        .map((word) => [normalizeAudioText(word.ru), word.id]),
+    );
+    words.forEach((word) => {
+      if (word?.id && word?.ru) {
+        map.set(normalizeAudioText(word.ru), word.id);
+      }
+    });
+    return map;
+  }, [libraryState.status, libraryWords, words]);
   const libraryTopics = useMemo(
     () =>
       libraryState.books.flatMap((bookItem) =>
@@ -487,6 +514,10 @@ function App() {
     () => progress.history.filter((entry) => entry.date === currentDateKey),
     [currentDateKey, progress.history],
   );
+  const todayLearnedWordIds = useMemo(
+    () => new Set(todayHistory.map((entry) => entry.wordId).filter(Boolean)),
+    [todayHistory],
+  );
   const todayNewWordIds = useMemo(
     () =>
       new Set(
@@ -496,8 +527,18 @@ function App() {
       ),
     [todayHistory],
   );
-  const todayNewCount = todayHistory.filter((entry) => entry.kind === "new").length;
-  const todayReviewCount = todayHistory.filter((entry) => entry.kind === "review").length;
+  const todayReviewWordIds = useMemo(() => {
+    const ids = new Set(
+      todayHistory
+        .filter((entry) => entry.kind === "review")
+        .map((entry) => entry.wordId)
+        .filter(Boolean),
+    );
+    todayNewWordIds.forEach((wordId) => ids.delete(wordId));
+    return ids;
+  }, [todayHistory, todayNewWordIds]);
+  const todayNewCount = todayNewWordIds.size;
+  const todayReviewCount = todayReviewWordIds.size;
   const dueWords = useMemo(
     () => getDueWords(words, progress, now).filter((word) => !passedIds.has(word.id)),
     [now, passedIds, progress, words],
@@ -510,6 +551,28 @@ function App() {
     ) ||
     words.find((word) => !passedIds.has(word.id)) ||
     null;
+  const featuredWords = useMemo(() => {
+    const dueIds = new Set(dueWords.map((entry) => entry.id));
+    const ordered = [...dueWords, ...words.filter((entry) => !passedIds.has(entry.id))]
+      .filter((entry, index, collection) => {
+        return collection.findIndex((candidate) => candidate.id === entry.id) === index;
+      })
+      .sort((left, right) => {
+        const rank = (entry) => {
+          if (todayWord?.id === entry.id) return 0;
+          if (dueIds.has(entry.id)) return 1;
+          const status = getWordStatus(progress, entry.id);
+          if (status === "new") return 2;
+          if (status === "review") return 3;
+          return 4;
+        };
+        return rank(left) - rank(right) || left.number - right.number;
+      });
+    if (todayWord && !ordered.some((entry) => entry.id === todayWord.id)) {
+      ordered.unshift(todayWord);
+    }
+    return ordered.slice(0, 12);
+  }, [dueWords, passedIds, progress, todayWord, words]);
   const recentWords = useMemo(
     () =>
       [...words]
@@ -1073,21 +1136,59 @@ function App() {
 
   const speak = useCallback(
     (text) => {
-      if (!("speechSynthesis" in window)) {
-        setToast("当前浏览器不支持语音合成。");
+      const showFirstAudioTip = () => {
+        if (!hasSeenNotice(AUDIO_BROWSER_TIP_KEY)) {
+          setAudioNotice("first");
+          markNoticeSeen(AUDIO_BROWSER_TIP_KEY);
+        }
+      };
+      const speakWithDeviceVoice = () => {
+        if (!("speechSynthesis" in window)) {
+          setAudioNotice("unsupported");
+          return;
+        }
+        window.speechSynthesis.cancel();
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.lang = "ru-RU";
+        utterance.rate = settings.speechRate;
+        utterance.pitch = 1;
+        const voices = window.speechSynthesis.getVoices();
+        const russianVoice = voices.find((voice) =>
+          voice.lang.toLowerCase().startsWith("ru"),
+        );
+        if (russianVoice) utterance.voice = russianVoice;
+        utterance.onerror = () => setAudioNotice("error");
+        window.speechSynthesis.speak(utterance);
+        showFirstAudioTip();
+      };
+
+      audioElementRef.current?.pause();
+      if ("speechSynthesis" in window) {
+        window.speechSynthesis.cancel();
+      }
+
+      const wordId = audioWordIdByText.get(normalizeAudioText(text));
+      const audioUrl = wordId ? getWordAudioUrl(wordId) : null;
+      if (!audioUrl) {
+        speakWithDeviceVoice();
         return;
       }
-      window.speechSynthesis.cancel();
-      const utterance = new SpeechSynthesisUtterance(text);
-      utterance.lang = "ru-RU";
-      utterance.rate = settings.speechRate;
-      utterance.pitch = 1;
-      const voices = window.speechSynthesis.getVoices();
-      const russianVoice = voices.find((voice) => voice.lang.toLowerCase().startsWith("ru"));
-      if (russianVoice) utterance.voice = russianVoice;
-      window.speechSynthesis.speak(utterance);
+
+      const audio = new Audio(audioUrl);
+      audio.preload = "auto";
+      audio.playbackRate = settings.speechRate;
+      audio.preservesPitch = true;
+      audio.onerror = () => setAudioNotice("error");
+      audioElementRef.current = audio;
+      audio
+        .play()
+        .then(showFirstAudioTip)
+        .catch(() => {
+          setAudioNotice("error");
+          speakWithDeviceVoice();
+        });
     },
-    [settings.speechRate],
+    [audioWordIdByText, settings.speechRate],
   );
 
   const answerWord = useCallback((wordId, result) => {
@@ -1295,7 +1396,8 @@ function App() {
 
           {view === "home" && todayWord ? (
             <Dashboard
-              dailyCount={todayHistory.length}
+              key={workspace.activeBookId}
+              dailyCount={todayLearnedWordIds.size}
               dailyGoal={progress.dailyGoal}
               groupSize={practiceConfig.size}
               groupsPerDay={practiceConfig.groupsPerDay || 1}
@@ -1311,6 +1413,7 @@ function App() {
                 progress.dailyGoal - todayNewCount - dueWords.length,
               )}
               word={todayWord}
+              featuredWords={featuredWords}
               onStartStudy={startStudy}
               onOpenPracticeSetup={() =>
                 progress.activeQuiz
@@ -1443,7 +1546,7 @@ function App() {
             setSettings((current) => ({ ...current, ...change }))
           }
           onClose={() => setSettingsOpen(false)}
-          onTestVoice={() => speak("Путешествие")}
+          onTestVoice={() => speak(words[0]?.ru || "я")}
           onReset={resetProgress}
           onChangePassword={() => {
             setSettingsOpen(false);
@@ -1480,6 +1583,52 @@ function App() {
           onClose={() => setPasswordOpen(false)}
           onSubmit={changePassword}
         />
+
+        {audioNotice ? (
+          <aside
+            className="audio-browser-notice"
+            role="status"
+            aria-labelledby="audio-browser-notice-title"
+          >
+            <span className="audio-browser-notice-icon" aria-hidden="true">
+              <Headphones size={18} />
+            </span>
+            <div className="audio-browser-notice-copy">
+              <strong id="audio-browser-notice-title">
+                {audioNotice === "unsupported"
+                  ? "站内音频和设备语音都不可用"
+                  : audioNotice === "error"
+                    ? "这次音频没有播放成功"
+                    : "站内 MP3 发音已就绪"}
+              </strong>
+              <p>
+                若没有声音，请检查媒体音量；仍无声时可查看语音设置。
+              </p>
+            </div>
+            <button
+              type="button"
+              className="audio-browser-notice-close"
+              onClick={() => setAudioNotice(null)}
+              aria-label="关闭语音提示"
+            >
+              <X size={16} />
+            </button>
+            <div className="audio-browser-notice-actions">
+              <button type="button" onClick={() => setAudioNotice(null)}>
+                知道了
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setAudioNotice(null);
+                  openSettings();
+                }}
+              >
+                查看语音设置
+              </button>
+            </div>
+          </aside>
+        ) : null}
 
         <div className={`toast ${toast ? "visible" : ""}`} role="status" aria-live="polite">
           {toast}

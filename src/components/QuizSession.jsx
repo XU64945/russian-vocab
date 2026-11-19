@@ -70,6 +70,9 @@ function RoundHeader({ round, correct, wrong, onExit }) {
           />
         ))}
       </div>
+      <p className="quiz-memory-note">
+        遗忘临界点：到期词优先 · 答对拉长间隔 · 答错明天回补
+      </p>
     </>
   );
 }

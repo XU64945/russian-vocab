@@ -10,7 +10,7 @@
 - 每个词条完整呈现两条例句及译文、派生变化、同义替换和延展短语
 - 词库列表可搜索俄语、中文、例句、派生、同义和短语
 - 独立词条详情抽屉，集中展示完整讲解内容
-- 浏览器原生俄语朗读，可调整语速；移动端语音兼容性与俄语语音包设置见用户使用说明
+- 4000 词站内 MP3 发音，可调整语速；无法匹配整句时回退设备语音
 - 第 1 轮：俄语选中文；答对后展示完整词条，答错后错词回炉
 - 第 2 轮：中文选俄语；答错自动回到第 1 轮重新学习
 - 第 3 轮：单词与字母双重乱序拼写
@@ -47,6 +47,20 @@
 npm install
 npm run dev
 ```
+
+## Word audio
+
+The 4000 word pronunciations are hosted separately from the application bundle:
+
+```text
+https://russian-vocab-audio.pages.dev/words/w0001.mp3
+...
+https://russian-vocab-audio.pages.dev/words/w4000.mp3
+```
+
+Set `VITE_WORD_AUDIO_BASE_URL` at build time to use another static-storage base URL.
+The app matches the full Russian headword before playback, then falls back to the
+device speech engine for unmatched sentences and phrases.
 
 `npm run dev` 会先构建前端，然后由 `server/index.mjs` 在同一端口提供页面和账号 API。
 

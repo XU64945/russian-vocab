@@ -85,6 +85,15 @@ The word is the largest element. Audio remains adjacent. Meaning, part of speech
 example translation, forms, synonyms and phrases follow in descending hierarchy.
 Unicode stress marks render through the same Cyrillic font stack.
 
+The Today word surface is a three-layer CSS coverflow deck rather than one card
+whose copy changes in place. The active card stays in front while real previous
+and next word cards remain visible as scaled, dimmed back layers. A successful
+gesture promotes the adjacent card and demotes the former active card, so both
+depth and content orientation match the direction of travel. The deck uses a
+persistent React list keyed by word ID, transforms driven by CSS, and no extra
+animation dependency. Pointer, touch, keyboard and button navigation share the
+same active-index state.
+
 ### Answer controls
 
 Choice cards never move on hover. Wrong selections remain visible in sequence,
@@ -105,6 +114,8 @@ uses a compact morphing surface with Escape and outside-click dismissal.
 - Question entry: 400ms lateral reveal.
 - Progress: numeric easing and width transitions, not looping decoration.
 - Today-word border: one slow perimeter highlight, hidden for reduced motion.
+- Today-word deck: 540–620ms coverflow promotion with opacity and depth changes;
+  drag direction locks horizontally while vertical scrolling remains native.
 - Drawers: 280–360ms cubic-bezier transitions; no hover lift on buttons.
 
 ## Do's and Don'ts

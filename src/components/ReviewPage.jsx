@@ -3,6 +3,7 @@ import {
   AudioLines,
   Brain,
   Check,
+  Info,
   Layers3,
   PenLine,
   Sparkles,
@@ -79,6 +80,16 @@ export function ReviewPage({
             </button>
           </section>
 
+          <aside className="module-annotation review-pool-explainer">
+            <Info size={17} />
+            <div>
+              <strong>复习池不等于今日到期</strong>
+              <p>
+                这里收录所有完成三轮练习并进入长期复习的词。每日练习只优先抽取今天已经到复习日期的词。
+              </p>
+            </div>
+          </aside>
+
           <section className="review-word-section">
             <div className="section-heading">
               <div>
@@ -87,7 +98,7 @@ export function ReviewPage({
               </div>
               <span className="review-pool-note">
                 <Layers3 size={15} />
-                完成后按复习结果重新安排间隔
+                完整复习队列
               </span>
             </div>
             <div className="review-word-grid">

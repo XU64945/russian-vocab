@@ -6,8 +6,7 @@ import {
   CalendarDays,
   Check,
   Flame,
-  Gauge,
-  Layers3,
+  Info,
   RotateCcw,
   Target,
   Volume2,
@@ -16,7 +15,6 @@ import { useWordbook } from "../context/WordbookContext";
 import { getWordMemory } from "../lib/srs";
 import { todayKey } from "../lib/storage";
 import { AnimatedNumber } from "./ui/AnimatedNumber";
-import { Disclosure } from "./ui/Disclosure";
 
 function getWeekDays(history) {
   const formatter = new Intl.DateTimeFormat("zh-CN", { weekday: "short" });
@@ -311,6 +309,51 @@ export function ProgressPage({
         </div>
       </section>
 
+      <section className="difficult-section">
+        <div className="section-heading">
+          <div>
+            <span className="eyebrow-text dark">ПОВТОРИТЬ</span>
+            <h2>值得再看一眼的词</h2>
+          </div>
+          <button className="text-button" onClick={() => onStartStudy("difficult")}>
+            复习这些词
+            <ArrowUpRight size={16} />
+          </button>
+        </div>
+
+        <aside className="module-annotation difficult-explainer">
+          <Info size={17} />
+          <div>
+            <strong>这里不是完整复习池</strong>
+            <p>
+              这里只集中答错或标记不熟的薄弱词。“复习这些词”会进行三轮强化练习，而复习模块使用独立的词义与拼写两轮流程。
+            </p>
+          </div>
+        </aside>
+
+        {difficultWords.length ? (
+          <div className="difficult-grid">
+            {difficultWords.slice(0, 6).map((word) => (
+              <article className="difficult-word" key={word.id}>
+                <button onClick={() => onSpeak(word.ru)} aria-label={`朗读 ${word.ru}`}>
+                  <Volume2 size={17} />
+                </button>
+                <div>
+                  <strong>{word.ru}</strong>
+                  <span>{word.zh}</span>
+                </div>
+                <small>{topicMap[word.topic]?.label}</small>
+              </article>
+            ))}
+          </div>
+        ) : (
+          <div className="difficult-empty">
+            <Check size={20} />
+            <p>还没有标记“不熟”的单词。训练时点一下“还不熟”，它就会出现在这里。</p>
+          </div>
+        )}
+      </section>
+
       <section className="progress-lower-grid">
         <article className="weekly-card">
           <div className="section-heading compact">
@@ -371,70 +414,6 @@ export function ProgressPage({
         </article>
       </section>
 
-      <section className="srs-band">
-        <div className="srs-band-heading">
-          <div>
-            <span className="eyebrow-text">АДАПТИВНЫЙ ИНТЕРВАЛ</span>
-            <h2>在遗忘临界点推送</h2>
-            <p>不按固定日历；每个词根据你的回答独立调整下一次出现的时间。</p>
-          </div>
-          <span className="srs-live">
-            <span />
-            动态计算中
-          </span>
-        </div>
-
-        <div className="srs-steps">
-          <Disclosure
-            eyebrow="01 · ОЧЕРЕДЬ"
-            title="到期复习优先"
-            defaultOpen
-          >
-            <p>完成三轮练习后，新词从第 1 天的基准节点开始复习；答对会逐步拉长间隔，答错会优先回补。</p>
-          </Disclosure>
-          <Disclosure eyebrow="02 · ИНТЕРВАЛ" title="答对后拉长">
-            <p>完成练习后再通过两次复习，才会标记为“已掌握”；之后继续按 4、15 天等节点复习。</p>
-          </Disclosure>
-          <Disclosure eyebrow="03 · ВОЗВРАТ" title="答错后回补">
-            <p>答错不会清空复习阶段，但会在明天优先复习，并自动收进错题本、穿插回练习。</p>
-          </Disclosure>
-        </div>
-      </section>
-
-      <section className="difficult-section">
-        <div className="section-heading">
-          <div>
-            <span className="eyebrow-text dark">ПОВТОРИТЬ</span>
-            <h2>值得再看一眼的词</h2>
-          </div>
-          <button className="text-button" onClick={() => onStartStudy("difficult")}>
-            复习这些词
-            <ArrowUpRight size={16} />
-          </button>
-        </div>
-
-        {difficultWords.length ? (
-          <div className="difficult-grid">
-            {difficultWords.slice(0, 6).map((word) => (
-              <article className="difficult-word" key={word.id}>
-                <button onClick={() => onSpeak(word.ru)} aria-label={`朗读 ${word.ru}`}>
-                  <Volume2 size={17} />
-                </button>
-                <div>
-                  <strong>{word.ru}</strong>
-                  <span>{word.zh}</span>
-                </div>
-                <small>{topicMap[word.topic]?.label}</small>
-              </article>
-            ))}
-          </div>
-        ) : (
-          <div className="difficult-empty">
-            <Check size={20} />
-            <p>还没有标记“不熟”的单词。训练时点一下“还不熟”，它就会出现在这里。</p>
-          </div>
-        )}
-      </section>
     </div>
   );
 }
