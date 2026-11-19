@@ -1415,6 +1415,7 @@ function App() {
               difficultWords={difficultWords}
               onSpeak={speak}
               onStartStudy={() => setPracticeSetupOpen(true)}
+              onOpenWord={openWordDetail}
             />
           ) : null}
 
