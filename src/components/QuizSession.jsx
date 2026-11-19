@@ -268,9 +268,6 @@ function QuizDetailPage({ word, round, onContinue, onSpeak, onExit }) {
                     <p>{example.ru}</p>
                     <small>{example.zh}</small>
                   </div>
-                  <button onClick={() => onSpeak(example.ru)} aria-label="朗读例句">
-                    <Volume2 size={16} />
-                  </button>
                 </article>
               ))}
             </div>
@@ -288,14 +285,13 @@ function QuizDetailPage({ word, round, onContinue, onSpeak, onExit }) {
           <DetailSection icon={Layers3} eyebrow="РАСШИРЕНИЕ" title="延展与常用短语">
             <div className="phrase-list quiz-phrase-list">
               {phrases.map((phrase, index) => (
-                <button
+                <div
+                  className="phrase-item"
                   key={`${word.id}-quiz-phrase-${index}`}
-                  onClick={() => onSpeak(phrase.split(/\s+/).slice(0, 3).join(" "))}
                 >
                   <span>{String(index + 1).padStart(2, "0")}</span>
                   {phrase}
-                  <Volume2 size={14} />
-                </button>
+                </div>
               ))}
             </div>
           </DetailSection>

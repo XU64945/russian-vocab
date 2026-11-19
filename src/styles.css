@@ -2374,7 +2374,7 @@ kbd {
   border-radius: 13px;
 }
 
-.quiz-phrase-list button {
+.quiz-phrase-list .phrase-item {
   background: #fff;
   border: 1px solid var(--line);
 }
@@ -5055,7 +5055,7 @@ kbd {
 
 .detail-example {
   display: grid;
-  grid-template-columns: 24px 1fr 30px;
+  grid-template-columns: 24px 1fr;
   gap: 10px;
   align-items: center;
   padding: 12px 13px;
@@ -5084,18 +5084,6 @@ kbd {
   color: var(--ink-faint);
   font-size: 9px;
   line-height: 1.5;
-}
-
-.detail-example > button {
-  display: grid;
-  width: 29px;
-  height: 29px;
-  place-items: center;
-  color: var(--green);
-  background: var(--green-soft);
-  border: 0;
-  border-radius: 50%;
-  cursor: pointer;
 }
 
 .detail-two-columns {
@@ -5130,9 +5118,9 @@ kbd {
   gap: 6px;
 }
 
-.phrase-list button {
+.phrase-list .phrase-item {
   display: grid;
-  grid-template-columns: 22px 1fr 20px;
+  grid-template-columns: 22px 1fr;
   gap: 8px;
   align-items: center;
   padding: 8px 9px;
@@ -5141,26 +5129,15 @@ kbd {
   background: rgba(255, 255, 255, 0.68);
   border: 0;
   border-radius: 8px;
-  cursor: pointer;
   font-family: var(--font-display);
   font-size: 10px;
   line-height: 1.45;
 }
 
-.phrase-list button > span {
+.phrase-list .phrase-item > span {
   color: var(--ink-faint);
   font-family: var(--font-ui);
   font-size: 7px;
-}
-
-.phrase-list button > svg {
-  justify-self: end;
-  color: var(--green);
-}
-
-.phrase-list button:hover {
-  color: var(--ink);
-  background: #fff;
 }
 
 .detail-footer {

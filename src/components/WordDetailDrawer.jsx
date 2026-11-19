@@ -125,9 +125,6 @@ export function WordDetailDrawer({
                     <p>{example.ru}</p>
                     <small>{example.zh}</small>
                   </div>
-                  <button onClick={() => onSpeak(example.ru)} aria-label="朗读例句">
-                    <Volume2 size={16} />
-                  </button>
                 </article>
               ))}
             </div>
@@ -173,14 +170,13 @@ export function WordDetailDrawer({
             </div>
             <div className="phrase-list">
               {phrases.map((phrase, index) => (
-                <button
+                <div
+                  className="phrase-item"
                   key={`${word.id}-phrase-${index}`}
-                  onClick={() => onSpeak(phrase.split(/\s+/).slice(0, 3).join(" "))}
                 >
                   <span>{String(index + 1).padStart(2, "0")}</span>
                   {phrase}
-                  <Volume2 size={14} />
-                </button>
+                </div>
               ))}
             </div>
           </section>

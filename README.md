@@ -36,7 +36,7 @@ https://russian-vocab-audio.pages.dev/words/w0001.mp3
 https://russian-vocab-audio.pages.dev/words/w4000.mp3
 ```
 
-网站会优先播放这些 MP3。例句、短语等没有对应音频的内容，再回退到浏览器的语音合成。
+网站会优先播放这些 MP3；只有音频不可用时，才回退到浏览器的设备语音。例句和短语不提供单独的朗读按钮。
 
 如需更换音频存储地址，可以在构建时设置：
 

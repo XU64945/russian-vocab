@@ -63,7 +63,7 @@ export function SettingsDrawer({
               <Volume2 size={18} />
               <div>
                 <strong>朗读</strong>
-                <span>优先播放站内 MP3，例句才使用设备语音</span>
+                <span>优先播放站内 MP3，不可用时回退设备语音</span>
               </div>
             </div>
 
@@ -106,7 +106,7 @@ export function SettingsDrawer({
             <details className="voice-help">
               <summary>手机没有声音或提示不支持语音合成</summary>
               <p>
-                单词会优先播放站内 MP3。若例句仍无声，请检查媒体音量，并改用
+                单词会优先播放站内 MP3。若仍无声，请检查媒体音量，并改用
                 Safari 或 Chrome，不要使用微信、QQ 等 App 内置浏览器。
               </p>
               <p>
