@@ -29,7 +29,7 @@ export function FavoritesPage({
       {words.length ? (
         <section className="favorite-grid">
           {words.map((word) => {
-            const topic = topicMap[word.topic];
+            const topic = word.topicMeta || topicMap[word.topic];
             return (
               <article className="favorite-card" key={word.id}>
                 <div className="favorite-card-top">

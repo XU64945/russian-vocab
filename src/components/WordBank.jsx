@@ -64,6 +64,12 @@ function HighlightedText({ text, query }) {
 export function WordBank({
   words,
   progress,
+  allTopics = [],
+  allTopicMap = {},
+  books = [],
+  loading = false,
+  loadError = false,
+  onRetry,
   onSpeak,
   onOpenWord,
   favoriteIds,
@@ -71,10 +77,13 @@ export function WordBank({
   onToggleFavorite,
   onRestorePassed,
 }) {
-  const { topicMap, topics } = useWordbook();
+  const { topicMap: activeTopicMap, topics: activeTopics } = useWordbook();
+  const topicMap = allTopics.length ? allTopicMap : activeTopicMap;
+  const topics = allTopics.length ? allTopics : activeTopics;
   const [query, setQuery] = useState("");
   const deferredQuery = useDeferredValue(query);
   const [searchScope, setSearchScope] = useState("all");
+  const [activeBook, setActiveBook] = useState("all");
   const [activeLetter, setActiveLetter] = useState("all");
   const [activeTopic, setActiveTopic] = useState("all");
   const [status, setStatus] = useState("all");
@@ -123,6 +132,7 @@ export function WordBank({
     const normalizedQuery = normalizeSearch(deferredQuery);
     const numberQuery = deferredQuery.trim().match(/^#?(\d{1,4})$/)?.[1];
     const matches = searchDocuments.filter(({ word, fields }) => {
+      if (activeBook !== "all" && word.bookId !== activeBook) return false;
       if (activeTopic !== "all" && word.topic !== activeTopic) return false;
       const wordStatus = passedIds.has(word.id)
         ? "passed"
@@ -158,6 +168,7 @@ export function WordBank({
       })
       .map(({ word }) => word);
   }, [
+    activeBook,
     activeLetter,
     activeTopic,
     deferredQuery,
@@ -180,6 +191,7 @@ export function WordBank({
   function clearFilters() {
     setQuery("");
     setSearchScope("all");
+    setActiveBook("all");
     setActiveLetter("all");
     setActiveTopic("all");
     setStatus("all");
@@ -210,6 +222,43 @@ export function WordBank({
     return () => window.removeEventListener("keydown", focusSearch);
   }, []);
 
+  const visibleTopics =
+    activeBook === "all"
+      ? []
+      : topics.filter((topic) => topic.bookId === activeBook);
+
+  if (loading) {
+    return (
+      <div className="page library-page">
+        <section className="library-loading-panel" aria-live="polite">
+          <span className="library-loading-mark">С</span>
+          <div>
+            <p className="intro-ru">СЛОВАРЬ · 4000</p>
+            <h1>正在整理全部词书</h1>
+            <p>载入 8 本词书、4000 个词条和学习状态。</p>
+          </div>
+        </section>
+      </div>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <div className="page library-page">
+        <section className="library-loading-panel">
+          <div>
+            <p className="intro-ru">СЛОВАРЬ</p>
+            <h1>完整词库暂时未载入</h1>
+            <p>已登录，但 4000 词数据没有成功加载。</p>
+            <button className="primary-button" onClick={onRetry}>
+              重新载入词库
+            </button>
+          </div>
+        </section>
+      </div>
+    );
+  }
+
   return (
     <div className="page library-page">
       <section className="library-intro">
@@ -217,8 +266,8 @@ export function WordBank({
           <p className="intro-ru">СЛОВАРЬ</p>
           <h1>你的俄语词库</h1>
           <p>
-            {words.length} 个高频词，分成 {topics.length} 个学习单元。每个词条都包含双例句、
-            派生变化、同义替换和延展短语。
+            {words.length} 个高频词，来自 {books.length || 8} 本词书。可按词书、
+            俄语字母、学习状态和全部词条字段检索。
           </p>
         </div>
         <div className="library-count">
@@ -286,7 +335,7 @@ export function WordBank({
         <div className="library-index-heading">
           <div>
             <span>俄语首字母索引</span>
-            <small>按第一个字母快速定位，数字编号可直接搜索，如 3501</small>
+            <small>按第一个字母快速定位，数字编号可直接搜索，如 4000</small>
           </div>
           <button
             className="text-button"
@@ -294,6 +343,7 @@ export function WordBank({
             disabled={
               !query &&
               searchScope === "all" &&
+              activeBook === "all" &&
               activeLetter === "all" &&
               activeTopic === "all" &&
               status === "all"
@@ -330,6 +380,10 @@ export function WordBank({
 
       <div className="index-result-summary">
         <span>
+          {activeBook === "all"
+            ? "全部词书"
+            : books.find((book) => book.id === activeBook)?.title}
+          {" · "}
           {activeLetter === "all" ? "全部字母" : `${activeLetter.toUpperCase()} 开头`}
           {activeTopic !== "all" ? ` · ${topicMap[activeTopic]?.label}` : ""}
           {searchScope !== "all"
@@ -339,24 +393,56 @@ export function WordBank({
         <strong>{filteredWords.length} 个结果</strong>
       </div>
 
-      <div className="topic-filters">
+      <div className="library-book-filter" aria-label="词书筛选">
         <button
-          className={activeTopic === "all" ? "active" : ""}
-          onClick={() => updateFilter(setActiveTopic, "all")}
+          className={activeBook === "all" ? "active" : ""}
+          onClick={() => {
+            updateFilter(setActiveBook, "all");
+            setActiveTopic("all");
+          }}
         >
-          所有单元
+          全部词书
+          <small>{words.length}</small>
         </button>
-        {topics.map((topic) => (
+        {books.map((book) => (
           <button
-            className={activeTopic === topic.id ? "active" : ""}
-            key={topic.id}
-            onClick={() => updateFilter(setActiveTopic, topic.id)}
+            className={activeBook === book.id ? "active" : ""}
+            key={book.id}
+            onClick={() => {
+              updateFilter(setActiveBook, book.id);
+              setActiveTopic("all");
+            }}
           >
-            <span className="filter-topic-dot" style={{ background: topic.color }} />
-            {topic.label}
+            {book.title.replace("俄语高频词精讲 · ", "")}
+            <small>{book.words?.length || book.wordCount || 500}</small>
           </button>
         ))}
       </div>
+
+      {activeBook !== "all" ? (
+        <div className="topic-filters">
+          <button
+            className={activeTopic === "all" ? "active" : ""}
+            onClick={() => updateFilter(setActiveTopic, "all")}
+          >
+            所有单元
+          </button>
+          {visibleTopics.map((topic) => (
+            <button
+              className={activeTopic === topic.id ? "active" : ""}
+              key={topic.id}
+              onClick={() => updateFilter(setActiveTopic, topic.id)}
+            >
+              <span className="filter-topic-dot" style={{ background: topic.color }} />
+              {topic.label}
+            </button>
+          ))}
+        </div>
+      ) : (
+        <div className="library-unit-hint">
+          选择一本词书后，可继续按该册的 10 个学习单元筛选
+        </div>
+      )}
 
       <section className="word-table" aria-live="polite">
         <div className="word-table-head">
@@ -369,7 +455,7 @@ export function WordBank({
 
         {visibleWords.length ? (
           visibleWords.map((word) => {
-            const topic = topicMap[word.topic];
+            const topic = word.topicMeta || topicMap[word.topic];
             const wordStatus = passedIds.has(word.id)
               ? "passed"
               : getWordStatus(progress, word.id);

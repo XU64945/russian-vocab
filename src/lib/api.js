@@ -55,6 +55,10 @@ export const api = {
     return request(`/api/progress?bookId=${encodeURIComponent(bookId)}`);
   },
 
+  getWordbook(bookId) {
+    return request(`/api/wordbooks/${encodeURIComponent(bookId)}`);
+  },
+
   changePassword(currentPassword, newPassword, confirmPassword) {
     return request("/api/password", {
       method: "POST",

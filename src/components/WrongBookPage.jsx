@@ -25,7 +25,7 @@ export function WrongBookPage({ words, progress, onOpenWord, onSpeak }) {
       {words.length ? (
         <section className="wrongbook-grid">
           {words.map((word) => {
-            const topic = topicMap[word.topic];
+            const topic = word.topicMeta || topicMap[word.topic];
             const memory = getWordMemory(progress, word.id);
             return (
               <article className="wrongbook-card" key={word.id}>

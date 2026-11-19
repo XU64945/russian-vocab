@@ -46,7 +46,12 @@ export function WordDetailDrawer({
 
   if (!word) return null;
 
-  const topic = topicMap[word.topic];
+  const topic = word.topicMeta || topicMap[word.topic] || {
+    label: word.bookTitle || "词条",
+    ru: "Словарь",
+    color: "#174a8a",
+    soft: "#e7f0ff",
+  };
   const phrases = splitPhrases(word.phrases);
 
   return (
@@ -81,6 +86,9 @@ export function WordDetailDrawer({
                 <span style={{ background: topic.soft, color: topic.color }}>
                   {topic.label}
                 </span>
+                {word.bookTitle ? (
+                  <span className="detail-book-label">{word.bookTitle}</span>
+                ) : null}
               </div>
               <button className="detail-audio" onClick={() => onSpeak(word.ru)}>
                 <Volume2 size={18} />

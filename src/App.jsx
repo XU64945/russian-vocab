@@ -88,6 +88,25 @@ function interleavePracticeWords(baseWords, insertedWords, size) {
   return queue.slice(0, size);
 }
 
+function mergeProgressByBook(progressByBook) {
+  const merged = freshProgress();
+  for (const bookProgress of Object.values(progressByBook)) {
+    if (!bookProgress) continue;
+    for (const key of [
+      "mastered",
+      "difficult",
+      "favorites",
+      "passed",
+      "wrongBook",
+      "reviewPool",
+    ]) {
+      merged[key] = [...new Set([...merged[key], ...(bookProgress[key] || [])])];
+    }
+    Object.assign(merged.memory, bookProgress.memory || {});
+  }
+  return merged;
+}
+
 function App() {
   const [authLoading, setAuthLoading] = useState(true);
   const [user, setUser] = useState(null);
@@ -127,7 +146,13 @@ function App() {
   });
   const [toast, setToast] = useState("");
   const [now, setNow] = useState(Date.now);
+  const [libraryState, setLibraryState] = useState({
+    status: "idle",
+    books: [],
+    progressByBook: {},
+  });
   const previousFocusRef = useRef(null);
+  const libraryLoadKeyRef = useRef("");
 
   const book = workspace?.book || null;
   const words = useMemo(() => book?.words || [], [book]);
@@ -140,6 +165,53 @@ function App() {
     () => new Map(words.map((word) => [word.id, word])),
     [words],
   );
+  const libraryWords = useMemo(
+    () =>
+      libraryState.books.flatMap((bookItem) => {
+        const topicLookup = Object.fromEntries(
+          bookItem.topics.map((topic) => [topic.id, topic]),
+        );
+        return bookItem.words.map((word) => ({
+          ...word,
+          bookId: bookItem.id,
+          bookTitle: bookItem.title,
+          topicMeta: topicLookup[word.topic] || {
+            id: word.topic,
+            label: bookItem.title,
+            ru: "Словарь",
+            color: "#174a8a",
+            soft: "#e7f0ff",
+          },
+        }));
+      }),
+    [libraryState.books],
+  );
+  const libraryTopics = useMemo(
+    () =>
+      libraryState.books.flatMap((bookItem) =>
+        bookItem.topics.map((topic) => ({
+          ...topic,
+          bookId: bookItem.id,
+          bookTitle: bookItem.title,
+        })),
+      ),
+    [libraryState.books],
+  );
+  const libraryTopicMap = useMemo(
+    () => Object.fromEntries(libraryTopics.map((topic) => [topic.id, topic])),
+    [libraryTopics],
+  );
+  const libraryOwnerMap = useMemo(
+    () => new Map(libraryWords.map((word) => [word.id, word.bookId])),
+    [libraryWords],
+  );
+  const effectiveLibraryProgress = useMemo(() => {
+    const progressByBook = {
+      ...libraryState.progressByBook,
+      ...(workspace?.activeBookId ? { [workspace.activeBookId]: progress } : {}),
+    };
+    return mergeProgressByBook(progressByBook);
+  }, [libraryState.progressByBook, progress, workspace?.activeBookId]);
 
   const loadWorkspace = useCallback(async (bookId) => {
     const data = await api.bootstrap(bookId);
@@ -167,6 +239,51 @@ function App() {
     setCloudSyncedAt(data.progressUpdatedAt || null);
     setView("home");
     setStudySession((current) => ({ ...current, queue: [] }));
+    setLibraryState({
+      status: "idle",
+      books: [],
+      progressByBook: {},
+    });
+    libraryLoadKeyRef.current = "";
+  }, []);
+
+  const loadLibraryData = useCallback(async (bookSummaries) => {
+    if (!bookSummaries?.length) return;
+    setLibraryState((current) => ({
+      ...current,
+      status: "loading",
+    }));
+    try {
+      const entries = await Promise.all(
+        bookSummaries.map(async (summary) => {
+          const [bookResult, progressResult] = await Promise.all([
+            api.getWordbook(summary.id),
+            api.getProgress(summary.id).catch((error) => {
+              if (error.status === 404) return { progress: freshProgress() };
+              throw error;
+            }),
+          ]);
+          return [
+            summary.id,
+            bookResult.book,
+            progressResult.progress || freshProgress(),
+          ];
+        }),
+      );
+      setLibraryState({
+        status: "ready",
+        books: entries.map((entry) => entry[1]),
+        progressByBook: Object.fromEntries(
+          entries.map(([bookId, , bookProgress]) => [bookId, bookProgress]),
+        ),
+      });
+    } catch (error) {
+      setLibraryState((current) => ({
+        ...current,
+        status: "error",
+      }));
+      setToast(error.message || "完整词库加载失败");
+    }
   }, []);
 
   useEffect(() => {
@@ -190,6 +307,30 @@ function App() {
       active = false;
     };
   }, [loadWorkspace]);
+
+  const wordbookKey = useMemo(
+    () => (workspace?.wordbooks || []).map((item) => item.id).join("|"),
+    [workspace?.wordbooks],
+  );
+
+  useEffect(() => {
+    if (
+      !workspace?.wordbooks?.length ||
+      !["library", "favorites"].includes(view) ||
+      libraryState.status !== "idle" ||
+      libraryLoadKeyRef.current === wordbookKey
+    ) {
+      return;
+    }
+    libraryLoadKeyRef.current = wordbookKey;
+    loadLibraryData(workspace.wordbooks);
+  }, [
+    libraryState.status,
+    loadLibraryData,
+    view,
+    wordbookKey,
+    workspace?.wordbooks,
+  ]);
 
   useEffect(() => {
     saveSettings(settings);
@@ -333,10 +474,13 @@ function App() {
     () => new Set(progress.difficult),
     [progress.difficult],
   );
-  const passedIds = useMemo(() => new Set(progress.passed), [progress.passed]);
+  const passedIds = useMemo(
+    () => new Set(effectiveLibraryProgress.passed),
+    [effectiveLibraryProgress.passed],
+  );
   const favoriteIds = useMemo(
-    () => new Set(progress.favorites),
-    [progress.favorites],
+    () => new Set(effectiveLibraryProgress.favorites),
+    [effectiveLibraryProgress.favorites],
   );
   const currentDateKey = useMemo(() => todayKey(), [now]);
   const todayHistory = useMemo(
@@ -391,16 +535,24 @@ function App() {
         .filter((word) => word && !passedIds.has(word.id)),
     [passedIds, progress.reviewPool, wordMap],
   );
-  const favoriteWords = useMemo(
-    () => words.filter((word) => favoriteIds.has(word.id)),
-    [favoriteIds, words],
-  );
+  const favoriteWords = useMemo(() => {
+    const sourceWords =
+      libraryState.status === "ready" ? libraryWords : words;
+    return sourceWords.filter((word) => favoriteIds.has(word.id));
+  }, [favoriteIds, libraryState.status, libraryWords, words]);
   const wrongWords = useMemo(
-    () =>
-      progress.wrongBook
-        .map((wordId) => wordMap.get(wordId))
-        .filter(Boolean),
-    [progress.wrongBook, wordMap],
+    () => {
+      const wrongBook = new Set(effectiveLibraryProgress.wrongBook);
+      return (libraryState.status === "ready" ? libraryWords : words).filter(
+        (word) => wrongBook.has(word.id),
+      );
+    },
+    [
+      effectiveLibraryProgress.wrongBook,
+      libraryState.status,
+      libraryWords,
+      words,
+    ],
   );
   const learnedCount = useMemo(
     () =>
@@ -792,16 +944,49 @@ function App() {
     }
   }, [progress, workspace?.activeBookId]);
 
-  const toggleFavorite = useCallback((wordId) => {
-    const removing = favoriteIds.has(wordId);
-    setProgress((current) => {
-      const favorites = new Set(current.favorites || []);
+  const toggleFavorite = useCallback(
+    (wordId) => {
+      const ownerBookId =
+        libraryOwnerMap.get(wordId) || workspace?.activeBookId;
+      if (!ownerBookId) return;
+      const isActiveBook = ownerBookId === workspace?.activeBookId;
+      const currentBookProgress = isActiveBook
+        ? progress
+        : libraryState.progressByBook[ownerBookId] || freshProgress();
+      const removing = (currentBookProgress.favorites || []).includes(wordId);
+      const favorites = new Set(currentBookProgress.favorites || []);
       if (removing) favorites.delete(wordId);
       else favorites.add(wordId);
-      return { ...current, favorites: Array.from(favorites) };
-    });
-    setToast(removing ? "已移出收藏夹。" : "已加入收藏夹。");
-  }, [favoriteIds]);
+      const nextProgress = {
+        ...currentBookProgress,
+        favorites: Array.from(favorites),
+      };
+      if (isActiveBook) {
+        setProgress(nextProgress);
+      } else {
+        setLibraryState((current) => ({
+          ...current,
+          progressByBook: {
+            ...current.progressByBook,
+            [ownerBookId]: nextProgress,
+          },
+        }));
+      }
+      api
+        .saveProgress(ownerBookId, nextProgress)
+        .then((result) => {
+          if (result.updatedAt) setCloudSyncedAt(result.updatedAt);
+        })
+        .catch((error) => setToast(error.message || "收藏同步失败"));
+      setToast(removing ? "已移出收藏夹。" : "已加入收藏夹。");
+    },
+    [
+      libraryOwnerMap,
+      libraryState.progressByBook,
+      progress,
+      workspace?.activeBookId,
+    ],
+  );
 
   const passWord = useCallback((wordId) => {
     setProgress((current) => {
@@ -818,26 +1003,58 @@ function App() {
     setToast("已跳过这个单词，它不会再进入练习和复习池。");
   }, []);
 
-  const restorePassed = useCallback((wordId) => {
-    setProgress((current) => ({
-      ...current,
-      passed: current.passed.filter((id) => id !== wordId),
-    }));
-    setToast("已恢复到学习队列。");
-  }, []);
+  const restorePassed = useCallback(
+    (wordId) => {
+      const ownerBookId =
+        libraryOwnerMap.get(wordId) || workspace?.activeBookId;
+      if (!ownerBookId) return;
+      const isActiveBook = ownerBookId === workspace?.activeBookId;
+      const currentBookProgress = isActiveBook
+        ? progress
+        : libraryState.progressByBook[ownerBookId] || freshProgress();
+      const nextProgress = {
+        ...currentBookProgress,
+        passed: (currentBookProgress.passed || []).filter(
+          (id) => id !== wordId,
+        ),
+      };
+      if (isActiveBook) {
+        setProgress(nextProgress);
+      } else {
+        setLibraryState((current) => ({
+          ...current,
+          progressByBook: {
+            ...current.progressByBook,
+            [ownerBookId]: nextProgress,
+          },
+        }));
+      }
+      api.saveProgress(ownerBookId, nextProgress).catch((error) => {
+        setToast(error.message || "恢复词条同步失败");
+      });
+      setToast("已恢复到学习队列。");
+    },
+    [
+      libraryOwnerMap,
+      libraryState.progressByBook,
+      progress,
+      workspace?.activeBookId,
+    ],
+  );
 
   const submitCorrection = useCallback(
     async ({ wordId, category, message }) => {
-      if (!workspace?.activeBookId) throw new Error("当前词书不可用");
+      const bookId = libraryOwnerMap.get(wordId) || workspace?.activeBookId;
+      if (!bookId) throw new Error("当前词书不可用");
       await api.submitCorrection({
-        bookId: workspace.activeBookId,
+        bookId,
         wordId,
         category,
         message,
       });
       setToast("纠错已发送给管理员。");
     },
-    [workspace?.activeBookId],
+    [libraryOwnerMap, workspace?.activeBookId],
   );
 
   const updateWord = useCallback(
@@ -1128,8 +1345,14 @@ function App() {
 
           {view === "library" ? (
             <WordBank
-              words={words}
-              progress={progress}
+              words={libraryWords}
+              progress={effectiveLibraryProgress}
+              allTopics={libraryTopics}
+              allTopicMap={libraryTopicMap}
+              books={workspace.wordbooks}
+              loading={["idle", "loading"].includes(libraryState.status)}
+              loadError={libraryState.status === "error"}
+              onRetry={() => loadLibraryData(workspace.wordbooks)}
               onSpeak={speak}
               onOpenWord={openWordDetail}
               favoriteIds={favoriteIds}
@@ -1151,7 +1374,7 @@ function App() {
           {view === "wrongbook" ? (
             <WrongBookPage
               words={wrongWords}
-              progress={progress}
+              progress={effectiveLibraryProgress}
               onOpenWord={openWordDetail}
               onSpeak={speak}
             />
