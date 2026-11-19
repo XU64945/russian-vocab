@@ -6503,6 +6503,219 @@ kbd {
   }
 }
 
+/* Vocabulary search index */
+
+.library-search-block {
+  display: grid;
+  flex: 1;
+  gap: 8px;
+  max-width: 670px;
+}
+
+.library-search-block .search-field {
+  max-width: none;
+}
+
+.search-clear {
+  display: grid;
+  flex: 0 0 auto;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  color: var(--ink-faint);
+  background: #e7eef8;
+  border: 0;
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.search-field kbd {
+  display: inline-flex;
+  gap: 3px;
+  align-items: center;
+  padding: 3px 7px;
+  color: var(--ink-faint);
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font-size: 7px;
+  white-space: nowrap;
+}
+
+.search-scope-bar {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.search-scope-bar::-webkit-scrollbar {
+  display: none;
+}
+
+.search-scope-bar > span {
+  flex: 0 0 auto;
+  color: var(--ink-faint);
+  font-size: 8px;
+  font-weight: 650;
+}
+
+.search-scope-bar button {
+  flex: 0 0 auto;
+  min-height: 25px;
+  padding: 0 8px;
+  color: var(--ink-soft);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  cursor: pointer;
+  font-size: 7px;
+}
+
+.search-scope-bar button:hover,
+.search-scope-bar button.active {
+  color: var(--blue);
+  background: #e9f2ff;
+  border-color: #c8dcfa;
+}
+
+.library-index-panel {
+  padding: 13px 15px 15px;
+  margin-top: 12px;
+  background: rgba(255, 255, 255, 0.64);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+}
+
+.library-index-heading {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.library-index-heading > div {
+  display: grid;
+  gap: 2px;
+}
+
+.library-index-heading span {
+  color: var(--ink);
+  font-size: 9px;
+  font-weight: 750;
+}
+
+.library-index-heading small {
+  color: var(--ink-faint);
+  font-size: 7px;
+}
+
+.library-index-heading .text-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.38;
+}
+
+.letter-index {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.letter-index button {
+  display: inline-flex;
+  gap: 4px;
+  align-items: baseline;
+  justify-content: center;
+  min-width: 31px;
+  min-height: 30px;
+  padding: 0 6px;
+  color: var(--ink-soft);
+  background: #fff;
+  border: 1px solid #d9e3ef;
+  border-radius: 7px;
+  cursor: pointer;
+  font-family: var(--font-display);
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.letter-index button:hover:not(:disabled),
+.letter-index button.active {
+  color: #fff;
+  background: var(--blue);
+  border-color: var(--blue);
+}
+
+.letter-index button:disabled {
+  cursor: default;
+  opacity: 0.3;
+}
+
+.letter-index button small {
+  font-family: var(--font-ui);
+  font-size: 6px;
+  font-weight: 600;
+}
+
+.index-result-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 11px 2px 5px;
+  color: var(--ink-faint);
+  font-size: 8px;
+}
+
+.index-result-summary strong {
+  color: var(--blue);
+  font-size: 9px;
+}
+
+.table-word mark,
+.table-translation mark {
+  padding: 0 2px;
+  color: inherit;
+  background: #ffe7a8;
+  border-radius: 3px;
+}
+
+@media (max-width: 760px) {
+  .library-search-block {
+    width: 100%;
+    max-width: none;
+  }
+
+  .library-index-panel {
+    padding: 11px;
+  }
+
+  .library-index-heading {
+    align-items: flex-start;
+  }
+
+  .library-index-heading small {
+    max-width: 220px;
+    line-height: 1.45;
+  }
+
+  .letter-index {
+    flex-wrap: nowrap;
+    padding-bottom: 3px;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .letter-index::-webkit-scrollbar {
+    display: none;
+  }
+
+  .letter-index button {
+    flex: 0 0 auto;
+  }
+}
+
 /* Learning plans, Russian keyboard, wrong book and account management */
 
 .plan-estimate {

@@ -955,6 +955,7 @@ function App() {
     const handleGlobalShortcut = (event) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
         event.preventDefault();
+        sessionStorage.setItem("slovo-focus-search", "1");
         setView("library");
       }
     };
