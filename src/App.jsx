@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AdminPage } from "./components/AdminPage";
 import { Dashboard } from "./components/Dashboard";
+import { FavoritesPage } from "./components/FavoritesPage";
 import { LoginScreen, AuthLoading } from "./components/LoginScreen";
 import { PasswordChangeModal } from "./components/PasswordChangeModal";
 import {
@@ -48,6 +49,8 @@ function freshProgress() {
     history: [],
     memory: {},
     reviewPool: [],
+    favorites: [],
+    passed: [],
     learningCursors: {
       beginner: 0,
       intermediate: 0,
@@ -66,6 +69,7 @@ function App() {
   const [settings, setSettings] = useState(loadSettings);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [passwordOpen, setPasswordOpen] = useState(false);
+  const [cloudSyncedAt, setCloudSyncedAt] = useState(null);
   const [detailWord, setDetailWord] = useState(null);
   const [practiceSetupOpen, setPracticeSetupOpen] = useState(false);
   const [practiceConfig, setPracticeConfig] = useState({
@@ -115,6 +119,7 @@ function App() {
       ...freshProgress(),
       ...data.progress,
     });
+    setCloudSyncedAt(data.progressUpdatedAt || null);
     setView("home");
     setStudySession((current) => ({ ...current, queue: [] }));
   }, []);
@@ -123,6 +128,10 @@ function App() {
     let active = true;
     (async () => {
       try {
+        if (sessionStorage.getItem("slovo-signed-out") === "1") {
+          await api.logout();
+          sessionStorage.removeItem("slovo-signed-out");
+        }
         await api.me();
         if (!active) return;
         await loadWorkspace();
@@ -182,14 +191,47 @@ function App() {
     const timeout = window.setTimeout(() => {
       api
         .saveProgress(workspace.activeBookId, progress)
+        .then((result) => {
+          if (result.updatedAt) setCloudSyncedAt(result.updatedAt);
+        })
         .catch((error) => setToast(error.message || "进度保存失败"));
     }, 450);
     return () => window.clearTimeout(timeout);
   }, [progress, user, workspace?.activeBookId]);
 
+  useEffect(() => {
+    if (!user || !workspace?.activeBookId) return undefined;
+    const flush = () => {
+      fetch("/api/progress", {
+        method: "PUT",
+        credentials: "same-origin",
+        keepalive: true,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          bookId: workspace.activeBookId,
+          progress,
+        }),
+      }).catch(() => {});
+    };
+    const handleVisibility = () => {
+      if (document.visibilityState === "hidden") flush();
+    };
+    window.addEventListener("pagehide", flush);
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () => {
+      window.removeEventListener("pagehide", flush);
+      document.removeEventListener("visibilitychange", handleVisibility);
+    };
+  }, [progress, user, workspace?.activeBookId]);
+
   const difficultIds = useMemo(
     () => new Set(progress.difficult),
     [progress.difficult],
+  );
+  const passedIds = useMemo(() => new Set(progress.passed), [progress.passed]);
+  const favoriteIds = useMemo(
+    () => new Set(progress.favorites),
+    [progress.favorites],
   );
   const currentDateKey = useMemo(() => todayKey(), [now]);
   const todayHistory = useMemo(
@@ -199,13 +241,17 @@ function App() {
   const todayNewCount = todayHistory.filter((entry) => entry.kind === "new").length;
   const todayReviewCount = todayHistory.filter((entry) => entry.kind === "review").length;
   const dueWords = useMemo(
-    () => getDueWords(words, progress, now),
-    [now, progress, words],
+    () => getDueWords(words, progress, now).filter((word) => !passedIds.has(word.id)),
+    [now, passedIds, progress, words],
   );
   const todayWord =
     dueWords[0] ||
-    words.find((word) => getWordStatus(progress, word.id) === "new") ||
-    words[0];
+    words.find(
+      (word) =>
+        !passedIds.has(word.id) && getWordStatus(progress, word.id) === "new",
+    ) ||
+    words.find((word) => !passedIds.has(word.id)) ||
+    null;
   const recentWords = useMemo(
     () =>
       [...words]
@@ -218,15 +264,22 @@ function App() {
     [progress.history, words],
   );
   const difficultWords = useMemo(
-    () => words.filter((word) => difficultIds.has(word.id)),
-    [difficultIds, words],
+    () =>
+      words.filter(
+        (word) => difficultIds.has(word.id) && !passedIds.has(word.id),
+      ),
+    [difficultIds, passedIds, words],
   );
   const reviewWords = useMemo(
     () =>
       progress.reviewPool
         .map((wordId) => wordMap.get(wordId))
-        .filter(Boolean),
-    [progress.reviewPool, wordMap],
+        .filter((word) => word && !passedIds.has(word.id)),
+    [passedIds, progress.reviewPool, wordMap],
+  );
+  const favoriteWords = useMemo(
+    () => words.filter((word) => favoriteIds.has(word.id)),
+    [favoriteIds, words],
   );
 
   const buildPracticeQueue = useCallback(
@@ -239,11 +292,17 @@ function App() {
           : difficultyWords;
 
       if (topic === "difficult") {
-        const difficultQueue = words.filter((word) => difficultIds.has(word.id));
+        const difficultQueue = words.filter(
+          (word) => difficultIds.has(word.id) && !progress.passed.includes(word.id),
+        );
         if (difficultQueue.length) return difficultQueue;
       }
 
-      const excluded = new Set([...excludeIds, ...progress.reviewPool]);
+      const excluded = new Set([
+        ...excludeIds,
+        ...progress.reviewPool,
+        ...progress.passed,
+      ]);
       const candidates = scopedWords.filter(
         (word) =>
           !excluded.has(word.id) &&
@@ -391,6 +450,79 @@ function App() {
     setSettingsOpen(true);
   }, []);
 
+  const syncNow = useCallback(async () => {
+    if (!workspace?.activeBookId) return;
+    try {
+      const result = await api.saveProgress(workspace.activeBookId, progress);
+      setCloudSyncedAt(result.updatedAt || new Date().toISOString());
+      setToast("学习进度已同步到云端。");
+    } catch (error) {
+      setToast(error.message || "云端同步失败");
+    }
+  }, [progress, workspace?.activeBookId]);
+
+  const toggleFavorite = useCallback((wordId) => {
+    const removing = favoriteIds.has(wordId);
+    setProgress((current) => {
+      const favorites = new Set(current.favorites || []);
+      if (removing) favorites.delete(wordId);
+      else favorites.add(wordId);
+      return { ...current, favorites: Array.from(favorites) };
+    });
+    setToast(removing ? "已移出收藏夹。" : "已加入收藏夹。");
+  }, [favoriteIds]);
+
+  const passWord = useCallback((wordId) => {
+    setProgress((current) => {
+      const passed = new Set(current.passed || []);
+      passed.add(wordId);
+      return {
+        ...current,
+        passed: Array.from(passed),
+        reviewPool: current.reviewPool.filter((id) => id !== wordId),
+        difficult: current.difficult.filter((id) => id !== wordId),
+        mastered: current.mastered.filter((id) => id !== wordId),
+      };
+    });
+    setToast("已跳过这个单词，它不会再进入练习和复习池。");
+  }, []);
+
+  const restorePassed = useCallback((wordId) => {
+    setProgress((current) => ({
+      ...current,
+      passed: current.passed.filter((id) => id !== wordId),
+    }));
+    setToast("已恢复到学习队列。");
+  }, []);
+
+  const submitCorrection = useCallback(
+    async ({ wordId, category, message }) => {
+      if (!workspace?.activeBookId) throw new Error("当前词书不可用");
+      await api.submitCorrection({
+        bookId: workspace.activeBookId,
+        wordId,
+        category,
+        message,
+      });
+      setToast("纠错已发送给管理员。");
+    },
+    [workspace?.activeBookId],
+  );
+
+  const updateWord = useCallback(
+    async (bookId, wordId, word) => {
+      await api.updateWord(bookId, wordId, word);
+      const data = await api.bootstrap(workspace?.activeBookId);
+      setWorkspace({
+        book: data.book,
+        wordbooks: data.wordbooks,
+        activeBookId: data.activeBookId,
+      });
+      setToast("词条已更新，用户重新加载后即可看到修订内容。");
+    },
+    [workspace?.activeBookId],
+  );
+
   const speak = useCallback(
     (text) => {
       if (!("speechSynthesis" in window)) {
@@ -469,18 +601,26 @@ function App() {
   );
 
   const logout = useCallback(async () => {
-    try {
-      if (workspace?.activeBookId) {
-        await api.saveProgress(workspace.activeBookId, progress);
-      }
-      await api.logout();
-    } finally {
-      setUser(null);
-      setWorkspace(null);
-      setSettingsOpen(false);
-      setPasswordOpen(false);
-      setView("home");
-      setLoginMessage("");
+    sessionStorage.setItem("slovo-signed-out", "1");
+    setUser(null);
+    setWorkspace(null);
+    setSettingsOpen(false);
+    setPasswordOpen(false);
+    setView("home");
+    setLoginMessage("");
+    const [saveResult, logoutResult] = await Promise.allSettled([
+      workspace?.activeBookId
+        ? api.saveProgress(workspace.activeBookId, progress)
+        : Promise.resolve(),
+      api.logout(),
+    ]);
+    if (saveResult.status === "rejected") {
+      setToast("云端进度保存失败，下次登录会自动重新同步。");
+    }
+    if (logoutResult.status === "fulfilled") {
+      sessionStorage.removeItem("slovo-signed-out");
+    } else {
+      setLoginMessage("已退出当前页面，请刷新以完成安全退出。");
     }
   }, [progress, workspace?.activeBookId]);
 
@@ -553,6 +693,7 @@ function App() {
     home: "今日学习",
     study: "闪卡训练",
     library: "我的词库",
+    favorites: "收藏夹",
     review: "复习",
     reviewSession: "复习",
     progress: "学习记录",
@@ -618,12 +759,17 @@ function App() {
               onSpeak={speak}
               autoPlay={settings.autoPlay}
               onOpenWord={openWordDetail}
-              onQueueComplete={() => {
+              onPassWord={(wordId) => passWord(wordId)}
+              onQueueComplete={(passedIds = []) => {
                 setProgress((current) => {
                   const existing = new Set(current.reviewPool);
+                  const passedSet = new Set([...current.passed, ...passedIds]);
                   const additions = studySession.queue
                     .map((word) => word.id)
-                    .filter((wordId) => !existing.has(wordId));
+                    .filter(
+                      (wordId) =>
+                        !existing.has(wordId) && !passedSet.has(wordId),
+                    );
                   const learningCursors = { ...current.learningCursors };
                   if (!studySession.topic && studySession.queue.length) {
                     const difficultyWords = getDifficultyWords(
@@ -670,6 +816,20 @@ function App() {
               onSpeak={speak}
               onOpenWord={openWordDetail}
               onStudyWord={(word) => startStudy(null, word)}
+              favoriteIds={favoriteIds}
+              passedIds={passedIds}
+              onToggleFavorite={toggleFavorite}
+              onRestorePassed={restorePassed}
+            />
+          ) : null}
+
+          {view === "favorites" ? (
+            <FavoritesPage
+              words={favoriteWords}
+              onOpenWord={openWordDetail}
+              onSpeak={speak}
+              onRemoveFavorite={toggleFavorite}
+              onStudyWord={(word) => startStudy(null, word)}
             />
           ) : null}
 
@@ -695,6 +855,7 @@ function App() {
               onExit={() => setView("review")}
               onComplete={completeReview}
               onSpeak={speak}
+              onOpenWord={openWordDetail}
             />
           ) : null}
 
@@ -715,6 +876,11 @@ function App() {
               user={user}
               wordbooks={workspace.wordbooks}
               onCreateWordbook={createWordbook}
+              onUpdateWord={updateWord}
+              onListCorrections={api.listCorrections}
+              onResolveCorrection={(id, status) =>
+                api.resolveCorrection(id, status)
+              }
             />
           ) : null}
         </main>
@@ -734,6 +900,8 @@ function App() {
             setPasswordOpen(true);
           }}
           onLogout={logout}
+          cloudSyncedAt={cloudSyncedAt}
+          onSyncNow={syncNow}
         />
 
         <WordDetailDrawer
@@ -742,6 +910,11 @@ function App() {
           onClose={() => setDetailWord(null)}
           onSpeak={speak}
           onStudy={(word) => startStudy(word.topic, word)}
+          favorite={detailWord ? favoriteIds.has(detailWord.id) : false}
+          onToggleFavorite={() => {
+            if (detailWord) toggleFavorite(detailWord.id);
+          }}
+          onSubmitCorrection={submitCorrection}
         />
 
         <PracticeSetupModal

@@ -6,12 +6,14 @@ import {
   LibraryBig,
   Settings,
   ShieldCheck,
+  Star,
 } from "lucide-react";
 
 const navItems = [
   { id: "home", label: "今日学习", ru: "Сегодня", icon: House },
   { id: "study", label: "闪卡训练", ru: "Карточки", icon: BookOpen },
   { id: "library", label: "我的词库", ru: "Словарь", icon: LibraryBig },
+  { id: "favorites", label: "收藏夹", ru: "Избранное", icon: Star },
   { id: "review", label: "复习", ru: "Повторение", icon: Brain },
   { id: "progress", label: "学习记录", ru: "Прогресс", icon: BarChart3 },
 ];

@@ -38,5 +38,18 @@ CREATE TABLE IF NOT EXISTS progress (
   PRIMARY KEY (user_id, book_id)
 );
 
+CREATE TABLE IF NOT EXISTS corrections (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  book_id TEXT NOT NULL,
+  word_id TEXT NOT NULL,
+  category TEXT NOT NULL,
+  message TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'open',
+  created_at TEXT NOT NULL,
+  resolved_at TEXT
+);
+
 CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
 CREATE INDEX IF NOT EXISTS idx_progress_user ON progress(user_id);
+CREATE INDEX IF NOT EXISTS idx_corrections_status ON corrections(status, created_at);

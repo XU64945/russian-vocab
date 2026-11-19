@@ -7,6 +7,7 @@ import {
   RotateCcw,
   Search,
   SlidersHorizontal,
+  Star,
   Volume2,
 } from "lucide-react";
 import { useWordbook } from "../context/WordbookContext";
@@ -14,7 +15,17 @@ import { getWordStatus } from "../lib/srs";
 
 const PAGE_SIZE = 12;
 
-export function WordBank({ words, progress, onSpeak, onOpenWord, onStudyWord }) {
+export function WordBank({
+  words,
+  progress,
+  onSpeak,
+  onOpenWord,
+  onStudyWord,
+  favoriteIds,
+  passedIds,
+  onToggleFavorite,
+  onRestorePassed,
+}) {
   const { topicMap, topics } = useWordbook();
   const [query, setQuery] = useState("");
   const [activeTopic, setActiveTopic] = useState("all");
@@ -24,10 +35,13 @@ export function WordBank({ words, progress, onSpeak, onOpenWord, onStudyWord }) 
     const normalizedQuery = query.trim().toLocaleLowerCase("ru");
     return words.filter((word) => {
       if (activeTopic !== "all" && word.topic !== activeTopic) return false;
-      const wordStatus = getWordStatus(progress, word.id);
+      const wordStatus = passedIds.has(word.id)
+        ? "passed"
+        : getWordStatus(progress, word.id);
       if (status === "new" && wordStatus !== "new") return false;
       if (status === "review" && wordStatus !== "review") return false;
       if (status === "mastered" && wordStatus !== "mastered") return false;
+      if (status === "passed" && wordStatus !== "passed") return false;
       if (!normalizedQuery) return true;
       return [
         word.ru,
@@ -42,7 +56,7 @@ export function WordBank({ words, progress, onSpeak, onOpenWord, onStudyWord }) 
         value.toLocaleLowerCase("ru").includes(normalizedQuery),
       );
     });
-  }, [activeTopic, progress, query, status, words]);
+  }, [activeTopic, passedIds, progress, query, status, words]);
 
   const totalPages = Math.max(1, Math.ceil(filteredWords.length / PAGE_SIZE));
   const safePage = Math.min(page, totalPages);
@@ -87,6 +101,7 @@ export function WordBank({ words, progress, onSpeak, onOpenWord, onStudyWord }) 
             { id: "new", label: "新词" },
             { id: "review", label: "待复习" },
             { id: "mastered", label: "已掌握" },
+            { id: "passed", label: "已跳过" },
           ].map((item) => (
             <button
               className={status === item.id ? "active" : ""}
@@ -130,7 +145,10 @@ export function WordBank({ words, progress, onSpeak, onOpenWord, onStudyWord }) 
         {visibleWords.length ? (
           visibleWords.map((word) => {
             const topic = topicMap[word.topic];
-            const wordStatus = getWordStatus(progress, word.id);
+            const wordStatus = passedIds.has(word.id)
+              ? "passed"
+              : getWordStatus(progress, word.id);
+            const favorite = favoriteIds.has(word.id);
             return (
               <article className="word-row" key={word.id}>
                 <div className="table-word">
@@ -140,6 +158,13 @@ export function WordBank({ words, progress, onSpeak, onOpenWord, onStudyWord }) 
                     aria-label={`朗读 ${word.ru}`}
                   >
                     <Volume2 size={17} />
+                  </button>
+                  <button
+                    className={`table-favorite-button ${favorite ? "active" : ""}`}
+                    onClick={() => onToggleFavorite(word.id)}
+                    aria-label={favorite ? `取消收藏 ${word.ru}` : `收藏 ${word.ru}`}
+                  >
+                    <Star size={16} fill={favorite ? "currentColor" : "none"} />
                   </button>
                   <span>
                     <strong>{word.ru}</strong>
@@ -157,6 +182,8 @@ export function WordBank({ words, progress, onSpeak, onOpenWord, onStudyWord }) 
                 <div className={`table-status ${wordStatus}`}>
                   {wordStatus === "mastered" ? (
                     <Check size={14} />
+                  ) : wordStatus === "passed" ? (
+                    <span className="status-dash">—</span>
                   ) : wordStatus === "review" ? (
                     <RotateCcw size={14} />
                   ) : (
@@ -164,18 +191,30 @@ export function WordBank({ words, progress, onSpeak, onOpenWord, onStudyWord }) 
                   )}
                   {wordStatus === "mastered"
                     ? "已掌握"
+                    : wordStatus === "passed"
+                      ? "已跳过"
                     : wordStatus === "review"
                       ? "待复习"
                       : "新词"}
                 </div>
                 <div className="row-actions">
+                  {wordStatus === "passed" ? (
+                    <button
+                      className="row-detail-button"
+                      onClick={() => onRestorePassed(word.id)}
+                    >
+                      恢复
+                    </button>
+                  ) : null}
                   <button className="row-detail-button" onClick={() => onOpenWord(word)}>
                     详情
                   </button>
-                  <button className="row-study-button" onClick={() => onStudyWord(word)}>
-                    练习
-                    <ArrowRight size={15} />
-                  </button>
+                  {wordStatus !== "passed" ? (
+                    <button className="row-study-button" onClick={() => onStudyWord(word)}>
+                      练习
+                      <ArrowRight size={15} />
+                    </button>
+                  ) : null}
                 </div>
               </article>
             );

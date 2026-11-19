@@ -11,6 +11,7 @@ import {
   Quote,
   Repeat2,
   RotateCcw,
+  SkipForward,
   Sparkles,
   Volume2,
   X,
@@ -77,17 +78,15 @@ function ChoiceQuestion({
   stage,
   lastAnswer,
   onAnswer,
-  onContinue,
+  onWrong,
   onOpenWord,
   onSpeak,
 }) {
+  const [wrongSelections, setWrongSelections] = useState([]);
+  const [reportedWrong, setReportedWrong] = useState(false);
   const { topicMap } = useWordbook();
   const topic = topicMap[word.topic];
   const correctValue = task.round === 1 ? word.zh : word.ru;
-  const selectedWrongOption =
-    stage === "feedback" && lastAnswer?.selected
-      ? task.options.find((option) => option.value === lastAnswer.selected)
-      : null;
   const prompt =
     task.round === 1
       ? {
@@ -98,8 +97,25 @@ function ChoiceQuestion({
       : {
           eyebrow: "ВЫБЕРИТЕ СЛОВО",
           title: "选择对应的俄语单词",
-          helper: "答错会回到第 1 轮重新学习这个词。",
+          helper: "可以连续排除错误选项，直到选中正确答案。",
         };
+
+  function chooseOption(optionRecord) {
+    const selected = optionRecord.value;
+    if (wrongSelections.includes(selected)) {
+      onOpenWord(optionRecord);
+      return;
+    }
+    if (selected === correctValue) {
+      onAnswer(selected, true, optionRecord);
+      return;
+    }
+    setWrongSelections((current) => [...current, selected]);
+    if (!reportedWrong) {
+      setReportedWrong(true);
+      onWrong(selected, optionRecord);
+    }
+  }
 
   return (
     <div className="quiz-stage">
@@ -142,14 +158,10 @@ function ChoiceQuestion({
         <div className="choice-grid">
           {task.options.map((optionRecord, index) => {
             const option = optionRecord.value;
-            const isWrongSelection =
-              stage === "feedback" &&
-              option === lastAnswer?.selected &&
-              !lastAnswer?.correct;
+            const isWrongSelection = wrongSelections.includes(option);
             const classNames = [
               "choice-button",
               isWrongSelection ? "incorrect" : "",
-              stage === "feedback" && !isWrongSelection ? "muted" : "",
             ]
               .filter(Boolean)
               .join(" ");
@@ -157,9 +169,11 @@ function ChoiceQuestion({
               <button
                 className={classNames}
                 key={`${task.serial}-${optionRecord.wordId}-${option}`}
-                disabled={stage === "feedback"}
-                onClick={() =>
-                  onAnswer(option, option === correctValue, optionRecord)
+                onClick={() => chooseOption(optionRecord)}
+                title={
+                  isWrongSelection
+                    ? "再次点击查看这个词的完整含义"
+                    : undefined
                 }
               >
                 <span className="choice-letter">{String.fromCharCode(65 + index)}</span>
@@ -171,8 +185,8 @@ function ChoiceQuestion({
                     </span>
                     <small className="choice-correction">
                       {task.round === 1
-                        ? `对应俄语：${selectedWrongOption?.ru ?? "—"}`
-                        : `对应中文：${selectedWrongOption?.zh ?? "—"}`}
+                        ? `对应俄语：${optionRecord.ru} · 点此查看词义`
+                        : `对应中文：${optionRecord.zh} · 点此查看词义`}
                     </small>
                   </>
                 ) : null}
@@ -182,32 +196,6 @@ function ChoiceQuestion({
         </div>
       </article>
 
-      {stage === "feedback" ? (
-        <div className="quiz-feedback">
-          <div className="quiz-feedback-mark">
-            <X size={20} />
-          </div>
-          <div className="quiz-feedback-copy">
-            <span>这次选错了</span>
-            <p>先记住红色模块里的词义对应关系，不再直接揭示正确答案。</p>
-            <small>
-              {task.round === 1
-                ? "再选一次，直到选对后进入完整词条。"
-                : `接下来先从第 1 轮重新学习，再返回第 ${task.round} 轮。`}
-            </small>
-          </div>
-          <div className="quiz-feedback-actions">
-            <button className="secondary-button" onClick={() => onOpenWord(word)}>
-              <BookOpen size={16} />
-              先看解析
-            </button>
-            <button className="primary-button" onClick={onContinue}>
-              {task.round === 1 ? "再选一次" : "去第 1 轮"}
-              {task.round === 1 ? <RotateCcw size={16} /> : <ArrowRight size={16} />}
-            </button>
-          </div>
-        </div>
-      ) : null}
     </div>
   );
 }
@@ -488,6 +476,7 @@ export function QuizSession({
   onOpenWord,
   onQueueComplete,
   onNextGroup,
+  onPassWord,
 }) {
   const [state, dispatch] = useReducer(
     quizReducer,
@@ -512,13 +501,25 @@ export function QuizSession({
   useEffect(() => {
     if (state.stage !== "complete" || completedRef.current) return;
     completedRef.current = true;
-    onQueueComplete();
-  }, [onQueueComplete, state.stage]);
+    onQueueComplete(Array.from(state.passedIds));
+  }, [onQueueComplete, state.passedIds, state.stage]);
 
   function submitAnswer(selected, correct, selectedWord = null) {
     if (!word) return;
     onAnswer(word.id, correct ? "known" : "again");
     dispatch({ type: "answer", selected, correct, selectedWord });
+  }
+
+  function reportWrong(selected, selectedWord) {
+    if (!word) return;
+    onAnswer(word.id, "again");
+    dispatch({ type: "report-wrong", selected, selectedWord });
+  }
+
+  function passCurrentWord() {
+    if (!word) return;
+    onPassWord(word.id);
+    dispatch({ type: "pass" });
   }
 
   if (state.stage === "complete") {
@@ -583,8 +584,7 @@ export function QuizSession({
         />
       ) : null}
 
-      {(state.stage === "question" || state.stage === "feedback") &&
-      state.active.round !== 3 ? (
+      {state.stage === "question" && state.active.round !== 3 ? (
         <ChoiceQuestion
           key={state.active.serial}
           word={word}
@@ -592,10 +592,22 @@ export function QuizSession({
           stage={state.stage}
           lastAnswer={state.lastAnswer}
           onAnswer={submitAnswer}
-          onContinue={() => dispatch({ type: "continue-feedback" })}
-          onOpenWord={onOpenWord}
+          onWrong={reportWrong}
+          onOpenWord={(option) =>
+            onOpenWord(allWords.find((item) => item.id === option.wordId))
+          }
           onSpeak={onSpeak}
         />
+      ) : null}
+
+      {state.stage === "question" ? (
+        <div className="quiz-pass-bar">
+          <button className="pass-button" onClick={passCurrentWord}>
+            <SkipForward size={16} />
+            Pass 这个单词
+          </button>
+          <span>跳过学习，不会进入练习和复习池</span>
+        </div>
       ) : null}
     </div>
   );

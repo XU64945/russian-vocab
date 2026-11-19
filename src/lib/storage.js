@@ -6,6 +6,8 @@ export const defaultProgress = {
   history: [],
   memory: {},
   reviewPool: [],
+  favorites: [],
+  passed: [],
   learningCursors: {
     beginner: 0,
     intermediate: 0,
@@ -28,6 +30,8 @@ export function loadProgress() {
       difficult: Array.isArray(stored.difficult) ? stored.difficult : [],
       history: Array.isArray(stored.history) ? stored.history : [],
       reviewPool: Array.isArray(stored.reviewPool) ? stored.reviewPool : [],
+      favorites: Array.isArray(stored.favorites) ? stored.favorites : [],
+      passed: Array.isArray(stored.passed) ? stored.passed : [],
       learningCursors:
         stored.learningCursors && typeof stored.learningCursors === "object"
           ? { beginner: 0, intermediate: 0, advanced: 0, ...stored.learningCursors }

@@ -108,6 +108,7 @@ export function createQuizState(words, seed = Date.now(), optionPool = words) {
     baseIds,
     cursor: 1,
     mistakes: [],
+    passedIds: new Set(),
     round2Queue: round2Ids,
     round3Queue: round3Ids,
     active: firstWord
@@ -250,6 +251,32 @@ export function continueAfterFeedback(state) {
   });
 }
 
+function passCurrentTask(state) {
+  const wordId = state.active?.wordId;
+  if (!wordId) return state;
+  const baseIndex = state.baseIds.indexOf(wordId);
+  const cursor =
+    baseIndex >= 0 && baseIndex < state.cursor
+      ? Math.max(0, state.cursor - 1)
+      : state.cursor;
+  const passedIds = new Set(state.passedIds);
+  passedIds.add(wordId);
+  const completedWords = new Set(state.stats.completedWords);
+  completedWords.delete(wordId);
+  return advanceQuiz({
+    ...state,
+    baseIds: state.baseIds.filter((id) => id !== wordId),
+    round2Queue: state.round2Queue.filter((id) => id !== wordId),
+    round3Queue: state.round3Queue.filter((id) => id !== wordId),
+    mistakes: state.mistakes.filter((mistake) => mistake.wordId !== wordId),
+    passedIds,
+    cursor,
+    stage: "question",
+    lastAnswer: null,
+    stats: { ...state.stats, completedWords },
+  });
+}
+
 export function quizReducer(state, action) {
   switch (action.type) {
     case "answer":
@@ -259,6 +286,15 @@ export function quizReducer(state, action) {
         action.correct,
         action.selectedWord,
       );
+    case "report-wrong":
+      return {
+        ...state,
+        stage: "question",
+        lastAnswer: null,
+        stats: { ...state.stats, wrong: state.stats.wrong + 1 },
+      };
+    case "pass":
+      return passCurrentTask(state);
     case "continue-detail":
       return continueAfterDetail(state);
     case "continue-feedback":

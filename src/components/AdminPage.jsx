@@ -1,14 +1,123 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
+  AlertCircle,
   BookPlus,
   Check,
   FileJson,
   Layers3,
+  Pencil,
+  RefreshCw,
   ShieldCheck,
   Upload,
   Users,
   X,
 } from "lucide-react";
+
+function WordCorrectionModal({ correction, onClose, onSave }) {
+  const [form, setForm] = useState(() => ({
+    ...correction.currentWord,
+    example1Ru: correction.currentWord?.examples?.[0]?.ru || "",
+    example1Zh: correction.currentWord?.examples?.[0]?.zh || "",
+    example2Ru: correction.currentWord?.examples?.[1]?.ru || "",
+    example2Zh: correction.currentWord?.examples?.[1]?.zh || "",
+  }));
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  function update(field, value) {
+    setForm((current) => ({ ...current, [field]: value }));
+  }
+
+  async function submit(event) {
+    event.preventDefault();
+    setSaving(true);
+    setError("");
+    try {
+      await onSave({
+        ...form,
+        examples: [
+          { ru: form.example1Ru, zh: form.example1Zh },
+          { ru: form.example2Ru, zh: form.example2Zh },
+        ].filter((example) => example.ru.trim() && example.zh.trim()),
+      });
+      onClose();
+    } catch (submitError) {
+      setError(submitError.message || "词条保存失败");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="admin-modal-layer open">
+      <button className="admin-modal-scrim" onClick={onClose} aria-label="关闭词条修改" />
+      <form className="admin-modal word-edit-modal" onSubmit={submit}>
+        <header>
+          <div>
+            <span className="eyebrow-text dark">ИСПРАВЛЕНИЕ</span>
+            <h2>修改词条</h2>
+          </div>
+          <button type="button" className="icon-button" onClick={onClose} aria-label="关闭">
+            <X size={18} />
+          </button>
+        </header>
+        <div className="correction-original">
+          <AlertCircle size={16} />
+          <p>{correction.message}</p>
+        </div>
+        <div className="admin-form-grid">
+          {[
+            ["ru", "俄语单词"],
+            ["zh", "中文释义"],
+            ["pos", "词性"],
+            ["transliteration", "转写"],
+            ["derived", "派生与变形"],
+            ["synonyms", "同义替换"],
+          ].map(([field, label]) => (
+            <label className="admin-input" key={field}>
+              <span>{label}</span>
+              <input
+                value={form[field] || ""}
+                onChange={(event) => update(field, event.target.value)}
+              />
+            </label>
+          ))}
+        </div>
+        <label className="admin-input">
+          <span>延展与常用短语</span>
+          <textarea
+            value={form.phrases || ""}
+            onChange={(event) => update("phrases", event.target.value)}
+          />
+        </label>
+        <div className="admin-form-grid example-edit-grid">
+          {[
+            ["example1Ru", "例句 1 · 俄语"],
+            ["example1Zh", "例句 1 · 中文"],
+            ["example2Ru", "例句 2 · 俄语"],
+            ["example2Zh", "例句 2 · 中文"],
+          ].map(([field, label]) => (
+            <label className="admin-input" key={field}>
+              <span>{label}</span>
+              <input
+                value={form[field] || ""}
+                onChange={(event) => update(field, event.target.value)}
+              />
+            </label>
+          ))}
+        </div>
+        {error ? <div className="login-error">{error}</div> : null}
+        <footer>
+          <span>保存后会立即更新所有用户的同一词条。</span>
+          <button className="primary-button" disabled={saving}>
+            <Check size={16} />
+            {saving ? "保存中…" : "保存并标记已处理"}
+          </button>
+        </footer>
+      </form>
+    </div>
+  );
+}
 
 const sampleBook = {
   title: "新词书名称",
@@ -188,8 +297,40 @@ function WordbookCreateModal({ open, onClose, onSubmit }) {
   );
 }
 
-export function AdminPage({ user, wordbooks, onCreateWordbook }) {
+export function AdminPage({
+  user,
+  wordbooks,
+  onCreateWordbook,
+  onUpdateWord,
+  onResolveCorrection,
+  onListCorrections,
+}) {
   const [modalOpen, setModalOpen] = useState(false);
+  const [corrections, setCorrections] = useState([]);
+  const [correctionsLoading, setCorrectionsLoading] = useState(true);
+  const [correctionError, setCorrectionError] = useState("");
+  const [editingCorrection, setEditingCorrection] = useState(null);
+
+  async function loadCorrections() {
+    setCorrectionsLoading(true);
+    setCorrectionError("");
+    try {
+      const data = await onListCorrections();
+      setCorrections(data.corrections || []);
+    } catch (error) {
+      setCorrectionError(error.message || "纠错列表读取失败");
+    } finally {
+      setCorrectionsLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    loadCorrections();
+  }, []);
+
+  const openCorrections = corrections.filter(
+    (correction) => correction.status === "open",
+  );
 
   return (
     <div className="page admin-page">
@@ -264,11 +405,83 @@ export function AdminPage({ user, wordbooks, onCreateWordbook }) {
         </div>
       </section>
 
+      <section className="admin-correction-section">
+        <div className="section-heading">
+          <div>
+            <span className="eyebrow-text dark">СООБЩЕНИЯ ОБ ОШИБКАХ</span>
+            <h2>用户纠错</h2>
+          </div>
+          <button className="text-button" onClick={loadCorrections}>
+            <RefreshCw size={15} />
+            刷新
+          </button>
+        </div>
+        {correctionError ? (
+          <div className="login-error">{correctionError}</div>
+        ) : correctionsLoading ? (
+          <div className="admin-correction-empty">正在读取纠错…</div>
+        ) : openCorrections.length ? (
+          <div className="admin-correction-list">
+            {openCorrections.map((correction) => (
+              <article className="admin-correction-card" key={correction.id}>
+                <span className="admin-correction-icon">
+                  <AlertCircle size={18} />
+                </span>
+                <div>
+                  <div className="admin-correction-meta">
+                    <strong>{correction.category}</strong>
+                    <span>{correction.bookTitle}</span>
+                    <small>{correction.username}</small>
+                  </div>
+                  <p>{correction.message}</p>
+                  <small>
+                    当前词条：
+                    {correction.currentWord
+                      ? `${correction.currentWord.ru} · ${correction.currentWord.zh}`
+                      : "词条已不存在"}
+                  </small>
+                </div>
+                <button
+                  className="secondary-button"
+                  disabled={!correction.currentWord}
+                  onClick={() => setEditingCorrection(correction)}
+                >
+                  <Pencil size={15} />
+                  修改词条
+                </button>
+              </article>
+            ))}
+          </div>
+        ) : (
+          <div className="admin-correction-empty">
+            <Check size={18} />
+            暂无待处理纠错
+          </div>
+        )}
+      </section>
+
       <WordbookCreateModal
         open={modalOpen}
         onClose={() => setModalOpen(false)}
         onSubmit={onCreateWordbook}
       />
+      {editingCorrection ? (
+        <WordCorrectionModal
+          correction={editingCorrection}
+          onClose={() => setEditingCorrection(null)}
+          onSave={async (word) => {
+            await onUpdateWord(
+              editingCorrection.bookId,
+              editingCorrection.wordId,
+              word,
+            );
+            await onResolveCorrection(editingCorrection.id, "resolved");
+            setCorrections((current) =>
+              current.filter((item) => item.id !== editingCorrection.id),
+            );
+          }}
+        />
+      ) : null}
     </div>
   );
 }

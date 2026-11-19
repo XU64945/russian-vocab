@@ -42,6 +42,8 @@ const defaultProgress = () => ({
   history: [],
   memory: {},
   reviewPool: [],
+  favorites: [],
+  passed: [],
   learningCursors: {
     beginner: 0,
     intermediate: 0,
@@ -97,14 +99,17 @@ function createSeedDatabase() {
     users: [admin, lvziyi],
     sessions: [],
     wordbooks: books,
+    corrections: [],
     progressByUser: {
       [admin.id]: {
         activeBookId: books[0].id,
         books: Object.fromEntries(books.map((book) => [book.id, defaultProgress()])),
+        progressUpdatedAt: {},
       },
       [lvziyi.id]: {
         activeBookId: books[0].id,
         books: Object.fromEntries(books.map((book) => [book.id, defaultProgress()])),
+        progressUpdatedAt: {},
       },
     },
   };
@@ -112,6 +117,10 @@ function createSeedDatabase() {
 
 function migrateBuiltInBooks(db) {
   let changed = false;
+  if (!Array.isArray(db.corrections)) {
+    db.corrections = [];
+    changed = true;
+  }
   for (const seedBook of builtInBooks) {
     const existingBook = db.wordbooks.find((book) => book.id === seedBook.id);
     if (!existingBook) {
@@ -138,7 +147,12 @@ function migrateBuiltInBooks(db) {
     const state = db.progressByUser[user.id] || {
       activeBookId: db.wordbooks[0]?.id,
       books: {},
+      progressUpdatedAt: {},
     };
+    if (!state.progressUpdatedAt) {
+      state.progressUpdatedAt = {};
+      changed = true;
+    }
     for (const book of db.wordbooks) {
       if (!state.books[book.id]) {
         state.books[book.id] = defaultProgress();
@@ -259,6 +273,7 @@ function getUserWorkspace(user, requestedBookId) {
   const progressState = db.progressByUser[user.id] || {
     activeBookId: db.wordbooks[0]?.id,
     books: {},
+    progressUpdatedAt: {},
   };
   const bookId =
     requestedBookId ||
@@ -278,6 +293,7 @@ function getUserWorkspace(user, requestedBookId) {
     activeBookId: book.id,
     book,
     progress: progressState.books[book.id],
+    progressUpdatedAt: progressState.progressUpdatedAt?.[book.id] || null,
   };
 }
 
@@ -429,12 +445,37 @@ async function handleApi(request, response, url) {
       sendJson(response, 404, { error: "词书不存在" });
       return true;
     }
-    const state = db.progressByUser[user.id] || { books: {} };
+    const state = db.progressByUser[user.id] || {
+      books: {},
+      progressUpdatedAt: {},
+    };
+    if (!state.progressUpdatedAt) state.progressUpdatedAt = {};
     state.activeBookId = bookId;
     state.books[bookId] = body.progress || defaultProgress();
+    const updatedAt = new Date().toISOString();
+    state.progressUpdatedAt[bookId] = updatedAt;
     db.progressByUser[user.id] = state;
     saveDb();
-    sendJson(response, 200, { ok: true });
+    sendJson(response, 200, { ok: true, updatedAt });
+    return true;
+  }
+
+  if (url.pathname === "/api/progress" && request.method === "GET") {
+    const bookId = url.searchParams.get("bookId");
+    if (!bookId) {
+      sendJson(response, 400, { error: "缺少词书 ID" });
+      return true;
+    }
+    const state = db.progressByUser[user.id];
+    const progress = state?.books?.[bookId];
+    if (!progress) {
+      sendJson(response, 404, { error: "尚未建立该词书的进度" });
+      return true;
+    }
+    sendJson(response, 200, {
+      progress,
+      updatedAt: state.progressUpdatedAt?.[bookId] || null,
+    });
     return true;
   }
 
@@ -451,6 +492,10 @@ async function handleApi(request, response, url) {
       sendJson(response, 400, { error: "新密码至少需要 8 位" });
       return true;
     }
+    if (checkPassword(user, newPassword)) {
+      sendJson(response, 400, { error: "新密码不能与当前密码相同" });
+      return true;
+    }
     if (newPassword !== confirmPassword) {
       sendJson(response, 400, { error: "两次输入的新密码不一致" });
       return true;
@@ -459,6 +504,83 @@ async function handleApi(request, response, url) {
     db.sessions = db.sessions.filter((session) => session.userId !== user.id);
     saveDb();
     sendJson(response, 200, { ok: true }, { "Set-Cookie": sessionCookie("", 0) });
+    return true;
+  }
+
+  if (url.pathname === "/api/corrections" && request.method === "POST") {
+    const body = await readJsonBody(request);
+    const bookId = String(body.bookId || "");
+    const wordId = String(body.wordId || "");
+    const message = String(body.message || "").trim();
+    const book = db.wordbooks.find((item) => item.id === bookId);
+    if (!book) {
+      sendJson(response, 404, { error: "词书不存在" });
+      return true;
+    }
+    if (!book.words.some((word) => word.id === wordId)) {
+      sendJson(response, 404, { error: "单词不存在" });
+      return true;
+    }
+    if (!message) {
+      sendJson(response, 400, { error: "请填写纠错内容" });
+      return true;
+    }
+    if (message.length > 2000) {
+      sendJson(response, 400, { error: "纠错内容不能超过 2000 字" });
+      return true;
+    }
+    const correction = {
+      id: `correction-${Date.now()}-${randomBytes(3).toString("hex")}`,
+      userId: user.id,
+      username: user.username,
+      bookId,
+      wordId,
+      category: String(body.category || "其他"),
+      message,
+      status: "open",
+      createdAt: new Date().toISOString(),
+      resolvedAt: null,
+    };
+    db.corrections.unshift(correction);
+    saveDb();
+    sendJson(response, 201, { correction });
+    return true;
+  }
+
+  if (url.pathname === "/api/corrections" && request.method === "GET") {
+    if (user.role !== "admin") {
+      sendJson(response, 403, { error: "只有管理员可以查看纠错" });
+      return true;
+    }
+    const corrections = db.corrections.slice(0, 200).map((correction) => {
+      const book = db.wordbooks.find((item) => item.id === correction.bookId);
+      return {
+        ...correction,
+        bookTitle: book?.title || "已删除词书",
+        currentWord: book?.words.find((word) => word.id === correction.wordId) || null,
+      };
+    });
+    sendJson(response, 200, { corrections });
+    return true;
+  }
+
+  const correctionMatch = url.pathname.match(/^\/api\/corrections\/([^/]+)$/);
+  if (correctionMatch && request.method === "PATCH") {
+    if (user.role !== "admin") {
+      sendJson(response, 403, { error: "只有管理员可以处理纠错" });
+      return true;
+    }
+    const body = await readJsonBody(request);
+    const correction = db.corrections.find((item) => item.id === correctionMatch[1]);
+    if (!correction) {
+      sendJson(response, 404, { error: "纠错记录不存在" });
+      return true;
+    }
+    correction.status = body.status === "open" ? "open" : "resolved";
+    correction.resolvedAt =
+      correction.status === "resolved" ? new Date().toISOString() : null;
+    saveDb();
+    sendJson(response, 200, { ok: true });
     return true;
   }
 
@@ -482,6 +604,53 @@ async function handleApi(request, response, url) {
     }
     saveDb();
     sendJson(response, 201, { book: bookSummary(book) });
+    return true;
+  }
+
+  const bookWordMatch = url.pathname.match(
+    /^\/api\/wordbooks\/([^/]+)\/words\/([^/]+)$/,
+  );
+  if (bookWordMatch && request.method === "PATCH") {
+    if (user.role !== "admin") {
+      sendJson(response, 403, { error: "只有管理员可以修改词条" });
+      return true;
+    }
+    const bookId = decodeURIComponent(bookWordMatch[1]);
+    const wordId = decodeURIComponent(bookWordMatch[2]);
+    const book = db.wordbooks.find((item) => item.id === bookId);
+    const word = book?.words.find((item) => item.id === wordId);
+    if (!book || !word) {
+      sendJson(response, 404, { error: "词书或单词不存在" });
+      return true;
+    }
+    const body = await readJsonBody(request);
+    const changes = body.word || body;
+    for (const field of [
+      "ru",
+      "zh",
+      "pos",
+      "transliteration",
+      "derived",
+      "synonyms",
+      "phrases",
+      "level",
+    ]) {
+      if (changes[field] !== undefined) word[field] = String(changes[field]);
+    }
+    if (!word.ru.trim() || !word.zh.trim()) {
+      sendJson(response, 400, { error: "俄语单词和中文释义不能为空" });
+      return true;
+    }
+    if (Array.isArray(changes.examples)) {
+      word.examples = changes.examples
+        .filter((example) => example?.ru && example?.zh)
+        .map((example) => ({
+          ru: String(example.ru),
+          zh: String(example.zh),
+        }));
+    }
+    saveDb();
+    sendJson(response, 200, { word });
     return true;
   }
 

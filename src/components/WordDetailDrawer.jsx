@@ -1,10 +1,15 @@
+import { useEffect, useState } from "react";
 import {
   ArrowRight,
+  BookMarked,
   BookOpen,
+  Flag,
   GitBranch,
   Layers3,
   Quote,
   Repeat2,
+  Send,
+  Star,
   Volume2,
   X,
 } from "lucide-react";
@@ -17,8 +22,31 @@ function splitPhrases(value) {
     .filter(Boolean);
 }
 
-export function WordDetailDrawer({ word, open, onClose, onSpeak, onStudy }) {
+export function WordDetailDrawer({
+  word,
+  open,
+  onClose,
+  onSpeak,
+  onStudy,
+  favorite,
+  onToggleFavorite,
+  onSubmitCorrection,
+}) {
   const { topicMap } = useWordbook();
+  const [correctionOpen, setCorrectionOpen] = useState(false);
+  const [category, setCategory] = useState("释义");
+  const [message, setMessage] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [correctionError, setCorrectionError] = useState("");
+
+  useEffect(() => {
+    if (!open || !word) return;
+    setCorrectionOpen(false);
+    setCategory("释义");
+    setMessage("");
+    setCorrectionError("");
+  }, [open, word?.id]);
+
   if (!word) return null;
 
   const topic = topicMap[word.topic];
@@ -60,6 +88,13 @@ export function WordDetailDrawer({ word, open, onClose, onSpeak, onStudy }) {
               <button className="detail-audio" onClick={() => onSpeak(word.ru)}>
                 <Volume2 size={18} />
                 听发音
+              </button>
+              <button
+                className={`detail-favorite-button ${favorite ? "active" : ""}`}
+                onClick={onToggleFavorite}
+              >
+                <Star size={17} fill={favorite ? "currentColor" : "none"} />
+                {favorite ? "已收藏" : "收藏"}
               </button>
             </div>
             <span className="detail-transliteration">{word.transliteration}</span>
@@ -143,6 +178,92 @@ export function WordDetailDrawer({ word, open, onClose, onSpeak, onStudy }) {
                 </button>
               ))}
             </div>
+          </section>
+
+          <section className="detail-section correction-section">
+            <div className="detail-section-heading">
+              <span className="detail-section-icon">
+                <Flag size={18} />
+              </span>
+              <div>
+                <small>СООБЩИТЬ ОБ ОШИБКЕ</small>
+                <h3>发现词条有误？</h3>
+              </div>
+            </div>
+            {correctionOpen ? (
+              <form
+                className="correction-form"
+                onSubmit={async (event) => {
+                  event.preventDefault();
+                  if (!message.trim()) return;
+                  setSubmitting(true);
+                  setCorrectionError("");
+                  try {
+                    await onSubmitCorrection({
+                      wordId: word.id,
+                      category,
+                      message,
+                    });
+                    setCorrectionOpen(false);
+                    setMessage("");
+                  } catch (error) {
+                    setCorrectionError(error.message || "纠错发送失败");
+                  } finally {
+                    setSubmitting(false);
+                  }
+                }}
+              >
+                <label>
+                  <span>问题类型</span>
+                  <select
+                    value={category}
+                    onChange={(event) => setCategory(event.target.value)}
+                  >
+                    {["释义", "例句", "派生变化", "同义替换", "延展短语", "其他"].map(
+                      (item) => (
+                        <option key={item}>{item}</option>
+                      ),
+                    )}
+                  </select>
+                </label>
+                <label>
+                  <span>具体问题</span>
+                  <textarea
+                    value={message}
+                    maxLength={2000}
+                    onChange={(event) => setMessage(event.target.value)}
+                    placeholder="请说明错误位置和正确内容，管理员会在后台处理。"
+                  />
+                </label>
+                <div>
+                  <button
+                    type="button"
+                    className="text-button"
+                    onClick={() => setCorrectionOpen(false)}
+                  >
+                    取消
+                  </button>
+                  <button
+                    className="primary-button"
+                    disabled={submitting || !message.trim()}
+                  >
+                    <Send size={15} />
+                    {submitting ? "发送中…" : "发送给管理员"}
+                  </button>
+                </div>
+                {correctionError ? (
+                  <div className="login-error">{correctionError}</div>
+                ) : null}
+              </form>
+            ) : (
+              <button
+                className="correction-trigger"
+                onClick={() => setCorrectionOpen(true)}
+              >
+                <BookMarked size={16} />
+                提交纠错
+              </button>
+            )}
           </section>
         </div>
 

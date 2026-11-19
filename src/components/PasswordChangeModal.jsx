@@ -21,6 +21,10 @@ export function PasswordChangeModal({ open, onClose, onSubmit }) {
       setError("两次输入的新密码不一致");
       return;
     }
+    if (values.newPassword === values.currentPassword) {
+      setError("新密码不能与当前密码相同");
+      return;
+    }
     setSubmitting(true);
     try {
       await onSubmit(values);

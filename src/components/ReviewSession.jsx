@@ -75,22 +75,31 @@ function ReviewChoiceRound({
   onAnswer,
   onNext,
   onSpeak,
+  onOpenWord,
 }) {
-  const [answer, setAnswer] = useState(null);
+  const [wrongSelections, setWrongSelections] = useState([]);
+  const [reportedWrong, setReportedWrong] = useState(false);
+  const [correct, setCorrect] = useState(false);
   const options = useMemo(
     () => buildOptions(word, 1, allWords, `${seed}-${word.id}-${index}`),
     [allWords, index, seed, word],
   );
-  const selectedWrong =
-    answer && !answer.correct
-      ? options.find((option) => option.value === answer.selected)
-      : null;
-
   function choose(option) {
-    if (answer) return;
-    const correct = option.value === word.zh;
-    setAnswer({ selected: option.value, correct });
-    onAnswer(word.id, correct);
+    if (correct) return;
+    if (wrongSelections.includes(option.value)) {
+      onOpenWord(option);
+      return;
+    }
+    if (option.value === word.zh) {
+      setCorrect(true);
+      onAnswer(word.id, true);
+      return;
+    }
+    setWrongSelections((current) => [...current, option.value]);
+    if (!reportedWrong) {
+      setReportedWrong(true);
+      onAnswer(word.id, false);
+    }
   }
 
   return (
@@ -117,22 +126,22 @@ function ReviewChoiceRound({
         </div>
         <div className="choice-grid review-choice-grid">
           {options.map((option, optionIndex) => {
-            const isWrong = answer && !answer.correct && option.value === answer.selected;
-            const isCorrect = answer?.correct && option.value === word.zh;
+            const isWrong = wrongSelections.includes(option.value);
+            const isCorrect = correct && option.value === word.zh;
             return (
               <button
                 className={`choice-button ${isWrong ? "incorrect" : ""} ${
                   isCorrect ? "correct" : ""
-                } ${answer && !isWrong && !isCorrect ? "muted" : ""}`}
-                disabled={Boolean(answer)}
+                }`}
                 key={`${word.id}-${option.wordId}`}
                 onClick={() => choose(option)}
+                title={isWrong ? "再次点击查看这个词的完整含义" : undefined}
               >
                 <span className="choice-letter">{String.fromCharCode(65 + optionIndex)}</span>
                 <span className="choice-value">{option.value}</span>
                 {isWrong ? (
                   <small className="choice-correction">
-                    对应俄语：{selectedWrong?.ru ?? option.ru}
+                    对应俄语：{option.ru} · 点此查看词义
                   </small>
                 ) : null}
               </button>
@@ -141,30 +150,19 @@ function ReviewChoiceRound({
         </div>
       </article>
 
-      {answer ? (
-        <div className={`review-answer-bar ${answer.correct ? "correct" : "wrong"}`}>
+      {correct ? (
+        <div className="review-answer-bar correct">
           <span>
-            {answer.correct ? <Check size={18} /> : <X size={18} />}
+            <Check size={18} />
           </span>
           <div>
-            <strong>{answer.correct ? "答对了" : "还没选对"}</strong>
-            <small>
-              {answer.correct
-                ? "继续下一个词。"
-                : "先记住红色模块里的词义对应，再试一次。"}
-            </small>
+            <strong>答对了</strong>
+            <small>继续下一个词。</small>
           </div>
-          {answer.correct ? (
-            <button className="primary-button" onClick={onNext}>
-              下一个词
-              <ArrowRight size={15} />
-            </button>
-          ) : (
-            <button className="secondary-button" onClick={() => setAnswer(null)}>
-              <RotateCcw size={15} />
-              再试一次
-            </button>
-          )}
+          <button className="primary-button" onClick={onNext}>
+            下一个词
+            <ArrowRight size={15} />
+          </button>
         </div>
       ) : null}
     </div>
@@ -320,6 +318,7 @@ export function ReviewSession({
   onExit,
   onComplete,
   onSpeak,
+  onOpenWord,
 }) {
   const [phase, setPhase] = useState(1);
   const [index, setIndex] = useState(0);
@@ -391,6 +390,9 @@ export function ReviewSession({
           onAnswer={recordAnswer}
           onNext={next}
           onSpeak={onSpeak}
+          onOpenWord={(option) =>
+            onOpenWord(allWords.find((item) => item.id === option.wordId))
+          }
         />
       ) : (
         <ReviewSpellingRound

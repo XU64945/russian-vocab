@@ -44,6 +44,10 @@ export const api = {
     });
   },
 
+  getProgress(bookId) {
+    return request(`/api/progress?bookId=${encodeURIComponent(bookId)}`);
+  },
+
   changePassword(currentPassword, newPassword, confirmPassword) {
     return request("/api/password", {
       method: "POST",
@@ -60,5 +64,33 @@ export const api = {
       method: "POST",
       body: JSON.stringify(wordbook),
     });
+  },
+
+  submitCorrection(correction) {
+    return request("/api/corrections", {
+      method: "POST",
+      body: JSON.stringify(correction),
+    });
+  },
+
+  listCorrections() {
+    return request("/api/corrections");
+  },
+
+  resolveCorrection(id, status = "resolved") {
+    return request(`/api/corrections/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      body: JSON.stringify({ status }),
+    });
+  },
+
+  updateWord(bookId, wordId, word) {
+    return request(
+      `/api/wordbooks/${encodeURIComponent(bookId)}/words/${encodeURIComponent(wordId)}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify(word),
+      },
+    );
   },
 };

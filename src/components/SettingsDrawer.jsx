@@ -1,7 +1,9 @@
 import {
+  Cloud,
   Headphones,
   KeyRound,
   LogOut,
+  RefreshCw,
   RotateCcw,
   UserRound,
   Volume2,
@@ -18,6 +20,8 @@ export function SettingsDrawer({
   user,
   onChangePassword,
   onLogout,
+  cloudSyncedAt,
+  onSyncNow,
 }) {
   return (
     <div className={`drawer-layer ${open ? "open" : ""}`} aria-hidden={!open}>
@@ -103,10 +107,34 @@ export function SettingsDrawer({
 
           <section className="settings-group">
             <div className="settings-group-title">
+              <Cloud size={18} />
+              <div>
+                <strong>云端同步</strong>
+                <span>切换设备后登录同一账号即可读取最新进度</span>
+              </div>
+            </div>
+            <p className="settings-explainer">
+              {cloudSyncedAt
+                ? `最近同步：${new Intl.DateTimeFormat("zh-CN", {
+                    month: "numeric",
+                    day: "numeric",
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  }).format(new Date(cloudSyncedAt))}`
+                : "尚未建立云端同步记录。"}
+            </p>
+            <button className="secondary-button" onClick={onSyncNow}>
+              <RefreshCw size={16} />
+              立即同步到云端
+            </button>
+          </section>
+
+          <section className="settings-group">
+            <div className="settings-group-title">
               <RotateCcw size={18} />
               <div>
-                <strong>本地进度</strong>
-                <span>掌握记录按当前账号独立保存</span>
+                <strong>重置进度</strong>
+                <span>掌握记录按当前账号独立保存在云端</span>
               </div>
             </div>
             <p className="settings-explainer">

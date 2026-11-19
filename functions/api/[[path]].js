@@ -35,6 +35,8 @@ const defaultProgress = () => ({
   history: [],
   memory: {},
   reviewPool: [],
+  favorites: [],
+  passed: [],
   learningCursors: {
     beginner: 0,
     intermediate: 0,
@@ -167,11 +169,25 @@ async function ensureSchema(db) {
       updated_at TEXT NOT NULL,
       PRIMARY KEY (user_id, book_id)
     )`),
+    db.prepare(`CREATE TABLE IF NOT EXISTS corrections (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      book_id TEXT NOT NULL,
+      word_id TEXT NOT NULL,
+      category TEXT NOT NULL,
+      message TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'open',
+      created_at TEXT NOT NULL,
+      resolved_at TEXT
+    )`),
     db.prepare(
       "CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id)",
     ),
     db.prepare(
       "CREATE INDEX IF NOT EXISTS idx_progress_user ON progress(user_id)",
+    ),
+    db.prepare(
+      "CREATE INDEX IF NOT EXISTS idx_corrections_status ON corrections(status, created_at)",
     ),
   ]);
 }
@@ -364,6 +380,7 @@ async function getWorkspace(db, user, requestedBookId) {
     progress: progressRow?.data_json
       ? JSON.parse(progressRow.data_json)
       : defaultProgress(),
+    progressUpdatedAt: progressRow?.updated_at || null,
   };
 }
 
@@ -544,7 +561,23 @@ async function handleApi(context) {
       )
       .bind(bookId, user.id)
       .run();
-    return jsonResponse(200, { ok: true });
+    return jsonResponse(200, { ok: true, updatedAt: now });
+  }
+
+  if (path === "progress" && request.method === "GET") {
+    const bookId = url.searchParams.get("bookId");
+    if (!bookId) return jsonResponse(400, { error: "缺少词书 ID" });
+    const row = await db
+      .prepare(
+        "SELECT data_json, updated_at FROM progress WHERE user_id = ? AND book_id = ?",
+      )
+      .bind(user.id, bookId)
+      .first();
+    if (!row) return jsonResponse(404, { error: "尚未建立该词书的进度" });
+    return jsonResponse(200, {
+      progress: JSON.parse(row.data_json),
+      updatedAt: row.updated_at,
+    });
   }
 
   if (path === "password" && request.method === "POST") {
@@ -563,6 +596,18 @@ async function handleApi(context) {
     }
     if (String(body.newPassword || "").length < 8) {
       return jsonResponse(400, { error: "新密码至少需要 8 位" });
+    }
+    if (
+      constantTimeEqual(
+        currentHash,
+        await derivePassword(
+          String(body.newPassword || ""),
+          userRecord.password_salt,
+          userRecord.password_iterations,
+        ),
+      )
+    ) {
+      return jsonResponse(400, { error: "新密码不能与当前密码相同" });
     }
     if (body.newPassword !== body.confirmPassword) {
       return jsonResponse(400, { error: "两次输入的新密码不一致" });
@@ -584,6 +629,112 @@ async function handleApi(context) {
       { ok: true },
       { "Set-Cookie": sessionCookie("", 0) },
     );
+  }
+
+  if (path === "corrections" && request.method === "POST") {
+    const body = await request.json();
+    const bookId = String(body.bookId || "");
+    const wordId = String(body.wordId || "");
+    const message = String(body.message || "").trim();
+    const category = String(body.category || "其他").trim();
+    if (!bookId || !wordId || !message) {
+      return jsonResponse(400, { error: "请填写纠错内容" });
+    }
+    if (message.length > 2000) {
+      return jsonResponse(400, { error: "纠错内容不能超过 2000 字" });
+    }
+    const bookRow = await db
+      .prepare("SELECT words_json FROM wordbooks WHERE id = ?")
+      .bind(bookId)
+      .first();
+    if (!bookRow) return jsonResponse(404, { error: "词书不存在" });
+    const wordExists = JSON.parse(bookRow.words_json).some(
+      (word) => word.id === wordId,
+    );
+    if (!wordExists) return jsonResponse(404, { error: "单词不存在" });
+    const correction = {
+      id: `correction-${Date.now()}-${randomHex(3)}`,
+      createdAt: new Date().toISOString(),
+    };
+    await db
+      .prepare(
+        `INSERT INTO corrections
+          (id, user_id, book_id, word_id, category, message, status, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, 'open', ?)`,
+      )
+      .bind(
+        correction.id,
+        user.id,
+        bookId,
+        wordId,
+        category,
+        message,
+        correction.createdAt,
+      )
+      .run();
+    return jsonResponse(201, { correction });
+  }
+
+  if (path === "corrections" && request.method === "GET") {
+    if (user.role !== "admin") {
+      return jsonResponse(403, { error: "只有管理员可以查看纠错" });
+    }
+    const [correctionRows, bookRows] = await Promise.all([
+      db
+        .prepare(
+          `SELECT c.*, u.username
+           FROM corrections c
+           LEFT JOIN users u ON u.id = c.user_id
+           ORDER BY CASE c.status WHEN 'open' THEN 0 ELSE 1 END,
+                    c.created_at DESC
+           LIMIT 200`,
+        )
+        .all(),
+      db.prepare("SELECT id, title, words_json FROM wordbooks").all(),
+    ]);
+    const bookMap = new Map(
+      bookRows.results.map((book) => [book.id, book]),
+    );
+    const corrections = correctionRows.results.map((row) => {
+      const book = bookMap.get(row.book_id);
+      const currentWord = book
+        ? JSON.parse(book.words_json).find((word) => word.id === row.word_id)
+        : null;
+      return {
+        id: row.id,
+        bookId: row.book_id,
+        bookTitle: book?.title || "已删除词书",
+        wordId: row.word_id,
+        category: row.category,
+        message: row.message,
+        status: row.status,
+        createdAt: row.created_at,
+        resolvedAt: row.resolved_at,
+        username: row.username || "未知用户",
+        currentWord,
+      };
+    });
+    return jsonResponse(200, { corrections });
+  }
+
+  const correctionMatch = path.match(/^corrections\/([^/]+)$/);
+  if (correctionMatch && request.method === "PATCH") {
+    if (user.role !== "admin") {
+      return jsonResponse(403, { error: "只有管理员可以处理纠错" });
+    }
+    const body = await request.json();
+    const status = body.status === "open" ? "open" : "resolved";
+    await db
+      .prepare(
+        "UPDATE corrections SET status = ?, resolved_at = ? WHERE id = ?",
+      )
+      .bind(
+        status,
+        status === "resolved" ? new Date().toISOString() : null,
+        correctionMatch[1],
+      )
+      .run();
+    return jsonResponse(200, { ok: true });
   }
 
   if (path === "wordbooks" && request.method === "GET") {
@@ -635,6 +786,54 @@ async function handleApi(context) {
         createdBy: book.createdBy,
       },
     });
+  }
+
+  const bookWordMatch = path.match(/^wordbooks\/([^/]+)\/words\/([^/]+)$/);
+  if (bookWordMatch && request.method === "PATCH") {
+    if (user.role !== "admin") {
+      return jsonResponse(403, { error: "只有管理员可以修改词条" });
+    }
+    const [bookId, rawWordId] = bookWordMatch.slice(1).map(decodeURIComponent);
+    const row = await db
+      .prepare("SELECT * FROM wordbooks WHERE id = ?")
+      .bind(bookId)
+      .first();
+    if (!row) return jsonResponse(404, { error: "词书不存在" });
+    const body = await request.json();
+    const words = JSON.parse(row.words_json);
+    const wordIndex = words.findIndex((word) => word.id === rawWordId);
+    if (wordIndex < 0) return jsonResponse(404, { error: "单词不存在" });
+    const changes = body.word || body;
+    const nextWord = { ...words[wordIndex] };
+    for (const field of [
+      "ru",
+      "zh",
+      "pos",
+      "transliteration",
+      "derived",
+      "synonyms",
+      "phrases",
+      "level",
+    ]) {
+      if (changes[field] !== undefined) nextWord[field] = String(changes[field]);
+    }
+    if (!nextWord.ru.trim() || !nextWord.zh.trim()) {
+      return jsonResponse(400, { error: "俄语单词和中文释义不能为空" });
+    }
+    if (Array.isArray(changes.examples)) {
+      nextWord.examples = changes.examples
+        .filter((example) => example?.ru && example?.zh)
+        .map((example) => ({
+          ru: String(example.ru),
+          zh: String(example.zh),
+        }));
+    }
+    words[wordIndex] = nextWord;
+    await db
+      .prepare("UPDATE wordbooks SET words_json = ? WHERE id = ?")
+      .bind(JSON.stringify(words), bookId)
+      .run();
+    return jsonResponse(200, { word: nextWord });
   }
 
   const bookMatch = path.match(/^wordbooks\/([^/]+)$/);
