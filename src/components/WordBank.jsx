@@ -1,6 +1,5 @@
 import { useMemo, useState } from "react";
 import {
-  ArrowRight,
   Check,
   ChevronLeft,
   ChevronRight,
@@ -20,7 +19,6 @@ export function WordBank({
   progress,
   onSpeak,
   onOpenWord,
-  onStudyWord,
   favoriteIds,
   passedIds,
   onToggleFavorite,
@@ -209,12 +207,6 @@ export function WordBank({
                   <button className="row-detail-button" onClick={() => onOpenWord(word)}>
                     详情
                   </button>
-                  {wordStatus !== "passed" ? (
-                    <button className="row-study-button" onClick={() => onStudyWord(word)}>
-                      练习
-                      <ArrowRight size={15} />
-                    </button>
-                  ) : null}
                 </div>
               </article>
             );

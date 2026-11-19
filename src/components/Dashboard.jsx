@@ -25,6 +25,8 @@ export function Dashboard({
   dailyCount,
   dailyGoal,
   groupSize,
+  groupsPerDay,
+  activeQuiz,
   masteredCount,
   totalWords,
   streak,
@@ -50,13 +52,19 @@ export function Dashboard({
       <section className="page-intro">
         <div>
           <p className="intro-ru">Доброе утро</p>
-          <h1>今天，从一组 {groupSize} 个俄语词开始。</h1>
+          <h1>
+            {activeQuiz
+              ? "继续上次未完成的练习。"
+              : `今天计划 ${groupsPerDay} 组，共 ${groupSize * groupsPerDay} 个俄语词。`}
+          </h1>
           <p className="intro-subtitle">
-            一组短练习，一点声音记忆。先完成今天的小目标，再去做别的。
+            {activeQuiz
+              ? "学习位置已经保存，会从上次离开的轮次和题目继续。"
+              : "一组短练习，一点声音记忆。先完成今天的小目标，再去做别的。"}
           </p>
         </div>
         <button className="primary-button intro-cta" onClick={onOpenPracticeSetup}>
-          <span>开始今日训练</span>
+          <span>{activeQuiz ? "继续上次练习" : "开始今日训练"}</span>
           <ArrowUpRight size={18} strokeWidth={1.9} />
         </button>
       </section>
@@ -97,10 +105,6 @@ export function Dashboard({
               <button className="text-button" onClick={() => onOpenWord(word)}>
                 完整词条
                 <BookOpen size={16} />
-              </button>
-              <button className="text-button" onClick={() => onStartStudy(word.topic)}>
-                练习这组
-                <ArrowRight size={16} />
               </button>
             </div>
           </div>
@@ -234,7 +238,7 @@ export function Dashboard({
             <span className="eyebrow-text dark">АЛГОРИТМ</span>
             <h2>根据记忆状态安排。</h2>
             <p>
-              到期复习先出现；完成一组后词序会记住。每天 00:00 刷新统计，未学习时词序保持原样。
+              到期复习先出现；错词每隔三词穿插一次，未完成的轮次和题目会自动保存到账号。
             </p>
           </div>
           <div className="method-icons" aria-hidden="true">

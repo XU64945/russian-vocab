@@ -59,11 +59,25 @@ export function buildOptions(word, round, words, seed) {
   );
 }
 
-export function scrambleLetters(word, seed) {
+export function scrambleLetters(word, seed, difficulty = "easy") {
   const characters = [...word.ru].map((character, index) => ({
     id: `${index}-${character}`,
     character,
   }));
+  if (difficulty !== "hard") {
+    const alphabet = [..."абвгдеёжзийклмнопрстуфхцчшщъыьэюя"];
+    const used = new Set([...word.ru.toLowerCase()]);
+    const decoys = seededShuffle(
+      alphabet.filter((letter) => !used.has(letter)),
+      `${seed}-${word.id}-decoys`,
+    )
+      .slice(0, 4)
+      .map((character, index) => ({
+        id: `decoy-${index}-${character}`,
+        character,
+      }));
+    characters.push(...decoys);
+  }
   if (characters.length < 2) return characters;
 
   let shuffled = seededShuffle(characters, `${seed}-${word.id}-letters`);
@@ -81,6 +95,7 @@ function makeTask(
   serial,
   returnToRound = null,
   isRecheck = false,
+  spellingDifficulty = "easy",
 ) {
   return {
     wordId: word.id,
@@ -89,11 +104,51 @@ function makeTask(
     returnToRound,
     isRecheck,
     options: round === 1 || round === 2 ? buildOptions(word, round, words, seed) : [],
-    letters: round === 3 ? scrambleLetters(word, seed) : [],
+    letters:
+      round === 3
+        ? scrambleLetters(word, seed, spellingDifficulty)
+        : [],
   };
 }
 
-export function createQuizState(words, seed = Date.now(), optionPool = words) {
+export function createQuizState(
+  words,
+  seed = Date.now(),
+  optionPool = words,
+  snapshot = null,
+  spellingDifficulty = "easy",
+) {
+  if (snapshot?.active && snapshot.wordMapIds?.length) {
+    const wordMap = new Map(words.map((word) => [word.id, word]));
+    if (wordMap.has(snapshot.active.wordId)) {
+      return {
+        seed: snapshot.seed ?? seed,
+        wordMap,
+        words,
+        optionPool,
+        baseIds: snapshot.baseIds || words.map((word) => word.id),
+        cursor: Number(snapshot.cursor || 0),
+        mistakes: snapshot.mistakes || [],
+        wrongWordIds: new Set(snapshot.wrongWordIds || []),
+        passedIds: new Set(snapshot.passedIds || []),
+        round2Queue: snapshot.round2Queue || [],
+        round3Queue: snapshot.round3Queue || [],
+        active: snapshot.active,
+        stage: snapshot.stage || "question",
+        lastAnswer: snapshot.lastAnswer || null,
+        serial: Number(snapshot.serial || 1),
+        preferRecheck: snapshot.preferRecheck !== false,
+        spellingDifficulty:
+          snapshot.spellingDifficulty || spellingDifficulty || "easy",
+        stats: {
+          correct: Number(snapshot.stats?.correct || 0),
+          wrong: Number(snapshot.stats?.wrong || 0),
+          completedWords: new Set(snapshot.stats?.completedWords || []),
+        },
+      };
+    }
+  }
+
   const baseIds = words.map((word) => word.id);
   const wordMap = new Map(words.map((word) => [word.id, word]));
   const firstWord = wordMap.get(baseIds[0]);
@@ -108,6 +163,7 @@ export function createQuizState(words, seed = Date.now(), optionPool = words) {
     baseIds,
     cursor: 1,
     mistakes: [],
+    wrongWordIds: new Set(),
     passedIds: new Set(),
     round2Queue: round2Ids,
     round3Queue: round3Ids,
@@ -118,10 +174,37 @@ export function createQuizState(words, seed = Date.now(), optionPool = words) {
     lastAnswer: null,
     serial: 1,
     preferRecheck: true,
+    spellingDifficulty,
     stats: {
       correct: 0,
       wrong: 0,
       completedWords: new Set(),
+    },
+  };
+}
+
+export function serializeQuizState(state) {
+  if (!state?.active) return null;
+  return {
+    seed: state.seed,
+    wordMapIds: Array.from(state.wordMap.keys()),
+    baseIds: state.baseIds,
+    cursor: state.cursor,
+    mistakes: state.mistakes,
+    wrongWordIds: Array.from(state.wrongWordIds),
+    passedIds: Array.from(state.passedIds),
+    round2Queue: state.round2Queue,
+    round3Queue: state.round3Queue,
+    active: state.active,
+    stage: state.stage,
+    lastAnswer: state.lastAnswer,
+    serial: state.serial,
+    preferRecheck: state.preferRecheck,
+    spellingDifficulty: state.spellingDifficulty,
+    stats: {
+      correct: state.stats.correct,
+      wrong: state.stats.wrong,
+      completedWords: Array.from(state.stats.completedWords),
     },
   };
 }
@@ -154,6 +237,7 @@ function nextRoundOneTask(state) {
         serial,
         mistake.returnToRound,
         true,
+        state.spellingDifficulty,
       ),
       stage: "question",
       lastAnswer: null,
@@ -168,7 +252,16 @@ function nextRoundOneTask(state) {
     cursor: state.cursor + 1,
     preferRecheck: state.cursor + 1 >= half,
     serial,
-    active: makeTask(word, 1, state.optionPool, state.seed, serial),
+    active: makeTask(
+      word,
+      1,
+      state.optionPool,
+      state.seed,
+      serial,
+      null,
+      false,
+      state.spellingDifficulty,
+    ),
     stage: "question",
     lastAnswer: null,
   };
@@ -184,7 +277,16 @@ function takeQueuedTask(state, queueKey, round) {
     ...state,
     [queueKey]: remaining,
     serial,
-    active: makeTask(word, round, state.optionPool, state.seed, serial),
+    active: makeTask(
+      word,
+      round,
+      state.optionPool,
+      state.seed,
+      serial,
+      null,
+      false,
+      state.spellingDifficulty,
+    ),
     stage: "question",
     lastAnswer: null,
   };
@@ -263,6 +365,8 @@ function passCurrentTask(state) {
   passedIds.add(wordId);
   const completedWords = new Set(state.stats.completedWords);
   completedWords.delete(wordId);
+  const wrongWordIds = new Set(state.wrongWordIds);
+  wrongWordIds.delete(wordId);
   return advanceQuiz({
     ...state,
     baseIds: state.baseIds.filter((id) => id !== wordId),
@@ -270,6 +374,7 @@ function passCurrentTask(state) {
     round3Queue: state.round3Queue.filter((id) => id !== wordId),
     mistakes: state.mistakes.filter((mistake) => mistake.wordId !== wordId),
     passedIds,
+    wrongWordIds,
     cursor,
     stage: "question",
     lastAnswer: null,
@@ -291,6 +396,7 @@ export function quizReducer(state, action) {
         ...state,
         stage: "question",
         lastAnswer: null,
+        wrongWordIds: new Set([...state.wrongWordIds, state.active.wordId]),
         stats: { ...state.stats, wrong: state.stats.wrong + 1 },
       };
     case "pass":

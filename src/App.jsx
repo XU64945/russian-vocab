@@ -17,6 +17,7 @@ import { Sidebar } from "./components/Sidebar";
 import { TopBar } from "./components/TopBar";
 import { WordBank } from "./components/WordBank";
 import { WordDetailDrawer } from "./components/WordDetailDrawer";
+import { WrongBookPage } from "./components/WrongBookPage";
 import { WordbookProvider } from "./context/WordbookContext";
 import { api } from "./lib/api";
 import {
@@ -31,6 +32,8 @@ import {
   getDueWords,
   getWordMemory,
   getWordStatus,
+  markMistake,
+  recordPracticeComplete,
 } from "./lib/srs";
 
 function previousDateKey() {
@@ -51,12 +54,38 @@ function freshProgress() {
     reviewPool: [],
     favorites: [],
     passed: [],
+    wrongBook: [],
+    activeQuiz: null,
+    studyPlan: {
+      groupsPerDay: 1,
+      groupSize: 10,
+    },
     learningCursors: {
       beginner: 0,
       intermediate: 0,
       advanced: 0,
     },
   };
+}
+
+function interleavePracticeWords(baseWords, insertedWords, size) {
+  const reserve = Math.min(
+    insertedWords.length,
+    Math.max(1, Math.round(size / 3)),
+  );
+  const base = baseWords.slice(0, Math.max(0, size - reserve));
+  const insertions = insertedWords.slice(0, reserve);
+  const queue = [];
+  let insertionIndex = 0;
+  for (let index = 0; index < base.length; index += 1) {
+    queue.push(base[index]);
+    if ((index + 1) % 3 === 0 && insertionIndex < insertions.length) {
+      queue.push(insertions[insertionIndex]);
+      insertionIndex += 1;
+    }
+  }
+  queue.push(...insertions.slice(insertionIndex));
+  return queue.slice(0, size);
 }
 
 function App() {
@@ -75,6 +104,8 @@ function App() {
   const [practiceConfig, setPracticeConfig] = useState({
     size: 10,
     difficulty: "beginner",
+    groupsPerDay: 1,
+    spellingDifficulty: "easy",
   });
   const [studySession, setStudySession] = useState({
     mode: "practice",
@@ -83,6 +114,8 @@ function App() {
     run: 0,
     size: 10,
     difficulty: "beginner",
+    savedState: null,
+    spellingDifficulty: "easy",
   });
   const [reviewConfig, setReviewConfig] = useState({
     spellingDifficulty: "easy",
@@ -115,9 +148,20 @@ function App() {
       wordbooks: data.wordbooks,
       activeBookId: data.activeBookId,
     });
-    setProgress({
+    const nextProgress = {
       ...freshProgress(),
       ...data.progress,
+    };
+    nextProgress.mastered = (data.progress.mastered || []).filter((wordId) => {
+      const memory = data.progress.memory?.[wordId];
+      return memory?.status === "mastered" && Number(memory.reviewPasses) >= 2;
+    });
+    setProgress(nextProgress);
+    setPracticeConfig({
+      size: data.progress.studyPlan?.groupSize || 10,
+      difficulty: "beginner",
+      groupsPerDay: data.progress.studyPlan?.groupsPerDay || 1,
+      spellingDifficulty: data.progress.studyPlan?.spellingDifficulty || "easy",
     });
     setCloudSyncedAt(data.progressUpdatedAt || null);
     setView("home");
@@ -238,6 +282,15 @@ function App() {
     () => progress.history.filter((entry) => entry.date === currentDateKey),
     [currentDateKey, progress.history],
   );
+  const todayNewWordIds = useMemo(
+    () =>
+      new Set(
+        todayHistory
+          .filter((entry) => entry.kind === "new")
+          .map((entry) => entry.wordId),
+      ),
+    [todayHistory],
+  );
   const todayNewCount = todayHistory.filter((entry) => entry.kind === "new").length;
   const todayReviewCount = todayHistory.filter((entry) => entry.kind === "review").length;
   const dueWords = useMemo(
@@ -281,6 +334,22 @@ function App() {
     () => words.filter((word) => favoriteIds.has(word.id)),
     [favoriteIds, words],
   );
+  const wrongWords = useMemo(
+    () =>
+      progress.wrongBook
+        .map((wordId) => wordMap.get(wordId))
+        .filter(Boolean),
+    [progress.wrongBook, wordMap],
+  );
+  const learnedCount = useMemo(
+    () =>
+      new Set([
+        ...progress.reviewPool,
+        ...progress.mastered,
+        ...progress.passed,
+      ]).size,
+    [progress.mastered, progress.passed, progress.reviewPool],
+  );
 
   const buildPracticeQueue = useCallback(
     ({ topic = null, seedWord = null, size = 10, difficulty = "beginner", excludeIds = [] }) => {
@@ -302,6 +371,7 @@ function App() {
         ...excludeIds,
         ...progress.reviewPool,
         ...progress.passed,
+        ...todayNewWordIds,
       ]);
       const candidates = scopedWords.filter(
         (word) =>
@@ -322,16 +392,45 @@ function App() {
         candidates.some((candidate) => candidate.id === word.id),
       );
       const dueIds = new Set(dueInScope.map((word) => word.id));
-      return [
+      const baseQueue = [
         ...dueInScope,
         ...orderedCandidates.filter((word) => !dueIds.has(word.id)),
-      ].slice(0, size);
+      ];
+      const wrongQueue = words.filter(
+        (word) =>
+          progress.wrongBook.includes(word.id) &&
+          !progress.passed.includes(word.id) &&
+          !excludeIds.includes(word.id) &&
+          !baseQueue.some((item) => item.id === word.id),
+      );
+      return interleavePracticeWords(baseQueue, wrongQueue, size);
     },
-    [difficultIds, dueWords, progress, words],
+    [difficultIds, dueWords, progress, todayNewWordIds, words],
   );
 
   const startStudy = useCallback(
     (topic = null, seedWord = null) => {
+      if (progress.activeQuiz) {
+        const savedState = progress.activeQuiz;
+        const queue = (savedState.wordMapIds || [])
+          .map((wordId) => wordMap.get(wordId))
+          .filter(Boolean);
+        if (queue.length) {
+          setStudySession((current) => ({
+            mode: "practice",
+            topic: savedState.practiceMeta?.topic || null,
+            queue,
+            run: current.run + 1,
+            size: savedState.practiceMeta?.size || queue.length,
+            difficulty: savedState.practiceMeta?.difficulty || "beginner",
+            savedState,
+            spellingDifficulty:
+              savedState.practiceMeta?.spellingDifficulty || "easy",
+          }));
+          setView("study");
+          return;
+        }
+      }
       const queue = buildPracticeQueue({
         topic,
         seedWord,
@@ -350,10 +449,12 @@ function App() {
         run: current.run + 1,
         size: seedWord ? 1 : practiceConfig.size,
         difficulty: practiceConfig.difficulty,
+        savedState: null,
+        spellingDifficulty: practiceConfig.spellingDifficulty || "easy",
       }));
       setView("study");
     },
-    [buildPracticeQueue, practiceConfig, progress.reviewPool],
+    [buildPracticeQueue, practiceConfig, progress.activeQuiz, progress.reviewPool, wordMap],
   );
 
   const handlePracticeSetup = useCallback(
@@ -361,9 +462,25 @@ function App() {
       const normalized = {
         size: nextConfig.size,
         difficulty: nextConfig.difficulty,
+        groupsPerDay: Number(nextConfig.groupsPerDay || 1),
+        spellingDifficulty: nextConfig.spellingDifficulty || "easy",
       };
       setPracticeConfig(normalized);
+      setProgress((current) => ({
+        ...current,
+        studyPlan: {
+          groupsPerDay: normalized.groupsPerDay,
+          groupSize: normalized.size,
+          spellingDifficulty: normalized.spellingDifficulty,
+        },
+        dailyGoal: normalized.groupsPerDay * normalized.size,
+      }));
       if (nextConfig.commitOnly) return;
+      if (progress.activeQuiz) {
+        startStudy();
+        setPracticeSetupOpen(false);
+        return;
+      }
 
       const queue = buildPracticeQueue({
         ...normalized,
@@ -380,10 +497,11 @@ function App() {
         queue,
         run: current.run + 1,
         ...normalized,
+        savedState: null,
       }));
       setView("study");
     },
-    [buildPracticeQueue, progress.reviewPool],
+    [buildPracticeQueue, progress.activeQuiz, progress.reviewPool, startStudy],
   );
 
   const addNextPracticeGroup = useCallback(() => {
@@ -404,9 +522,121 @@ function App() {
       ...current,
       queue,
       run: current.run + 1,
+      savedState: null,
     }));
     setView("study");
   }, [buildPracticeQueue, progress.reviewPool, studySession]);
+
+  const saveActiveQuiz = useCallback(
+    (snapshot) => {
+      setProgress((current) => ({
+        ...current,
+        activeQuiz: snapshot
+          ? {
+              ...snapshot,
+              practiceMeta: {
+                topic: studySession.topic,
+                size: studySession.size,
+                difficulty: studySession.difficulty,
+                spellingDifficulty: studySession.spellingDifficulty || "easy",
+              },
+            }
+          : null,
+      }));
+    },
+    [studySession],
+  );
+
+  const completePracticeGroup = useCallback(
+    (passedIds = [], wrongIds = []) => {
+      const passedSet = new Set(passedIds);
+      const wrongSet = new Set(wrongIds);
+      const now = Date.now();
+      const date = todayKey();
+      setProgress((current) => {
+        const reviewPool = new Set(current.reviewPool);
+        const mastered = new Set(current.mastered);
+        const difficult = new Set(current.difficult);
+        const wrongBook = new Set(current.wrongBook);
+        const memory = { ...current.memory };
+        const history = [...current.history];
+
+        for (const word of studySession.queue) {
+          if (passedSet.has(word.id)) continue;
+          const previous = getWordMemory(current, word.id);
+          const wrong = wrongSet.has(word.id);
+          memory[word.id] = recordPracticeComplete(previous, { wrong, now });
+          reviewPool.add(word.id);
+          mastered.delete(word.id);
+          if (wrong) {
+            difficult.add(word.id);
+            wrongBook.add(word.id);
+          }
+          history.push({
+            date,
+            wordId: word.id,
+            result: wrong ? "again" : "known",
+            kind: previous.status === "new" ? "new" : "review",
+            phase: "practice",
+            topic: word.topic,
+          });
+        }
+
+        const learningCursors = { ...current.learningCursors };
+        if (!studySession.topic && studySession.queue.length) {
+          const difficultyWords = getDifficultyWords(
+            words,
+            studySession.difficulty,
+          );
+          const completedIndexes = studySession.queue
+            .map((word) =>
+              difficultyWords.findIndex((item) => item.id === word.id),
+            )
+            .filter((index) => index >= 0);
+          const nextCursor = completedIndexes.length
+            ? Math.max(...completedIndexes) + 1
+            : learningCursors[studySession.difficulty] || 0;
+          learningCursors[studySession.difficulty] = Math.max(
+            learningCursors[studySession.difficulty] || 0,
+            nextCursor,
+          );
+        }
+
+        let streak = current.streak;
+        if (current.lastStudyDate !== date) {
+          streak =
+            current.lastStudyDate === previousDateKey()
+              ? current.streak + 1
+              : current.streak;
+        }
+
+        return {
+          ...current,
+          activeQuiz: null,
+          reviewPool: Array.from(reviewPool),
+          mastered: Array.from(mastered),
+          difficult: Array.from(difficult),
+          wrongBook: Array.from(wrongBook),
+          memory,
+          history: history.slice(-1500),
+          learningCursors,
+          totalReviews: current.totalReviews + studySession.queue.length,
+          lastStudyDate: date,
+          streak,
+        };
+      });
+      const topicName =
+        studySession.topic === "difficult"
+          ? "错题本"
+          : topicMap[studySession.topic]?.label;
+      setToast(
+        topicName
+          ? `${topicName}已完成，并加入复习池。`
+          : `本组 ${studySession.queue.length} 个词已完成三轮，并加入复习池。`,
+      );
+    },
+    [studySession, topicMap, words],
+  );
 
   const startReview = useCallback(() => {
     if (!reviewWords.length) {
@@ -421,15 +651,56 @@ function App() {
     setView("reviewSession");
   }, [reviewConfig.spellingDifficulty, reviewWords]);
 
-  const completeReview = useCallback((reviewedIds) => {
-    const reviewed = new Set(reviewedIds);
-    setProgress((current) => ({
-      ...current,
-      reviewPool: current.reviewPool.filter((wordId) => !reviewed.has(wordId)),
-    }));
+  const completeReview = useCallback((reviewedIds, wrongIds = []) => {
+    const reviewed = [...new Set(reviewedIds)];
+    const wrongSet = new Set(wrongIds);
+    const now = Date.now();
+    const date = todayKey();
+    setProgress((current) => {
+      const memory = { ...current.memory };
+      const mastered = new Set(current.mastered);
+      const difficult = new Set(current.difficult);
+      const wrongBook = new Set(current.wrongBook);
+      const reviewPool = new Set(current.reviewPool);
+      const history = [...current.history];
+      for (const wordId of reviewed) {
+        const wrong = wrongSet.has(wordId);
+        const previous = getWordMemory(current, wordId);
+        const next = applyReview(previous, wrong ? "again" : "known", now);
+        memory[wordId] = next;
+        reviewPool.add(wordId);
+        if (next.status === "mastered") mastered.add(wordId);
+        else mastered.delete(wordId);
+        if (wrong) {
+          difficult.add(wordId);
+          wrongBook.add(wordId);
+        } else if (next.status === "mastered") {
+          difficult.delete(wordId);
+        }
+        history.push({
+          date,
+          wordId,
+          result: wrong ? "again" : "known",
+          kind: "review",
+          phase: "review",
+          topic: wordMap.get(wordId)?.topic,
+        });
+      }
+      return {
+        ...current,
+        memory,
+        reviewPool: Array.from(reviewPool),
+        mastered: Array.from(mastered),
+        difficult: Array.from(difficult),
+        wrongBook: Array.from(wrongBook),
+        history: history.slice(-1500),
+        totalReviews: current.totalReviews + reviewed.length,
+        lastStudyDate: date,
+      };
+    });
     setView("review");
-    setToast("两轮复习完成，这批词已重新安排间隔。");
-  }, []);
+    setToast("本次复习完成，已按 1、2、4、15 天节点重新安排。");
+  }, [wordMap]);
 
   const navigate = useCallback((nextView) => {
     if (nextView === "study") {
@@ -543,23 +814,18 @@ function App() {
   );
 
   const answerWord = useCallback((wordId, result) => {
+    if (result !== "again") return;
     const date = todayKey();
     setProgress((current) => {
       const previousMemory = getWordMemory(current, wordId);
-      const nextMemory = applyReview(previousMemory, result);
+      const nextMemory = markMistake(previousMemory);
       const mastered = new Set(current.mastered);
       const difficult = new Set(current.difficult);
+      const wrongBook = new Set(current.wrongBook);
 
-      if (nextMemory.status === "mastered") {
-        mastered.add(wordId);
-      } else if (result === "again") {
-        mastered.delete(wordId);
-      }
-      if (result === "known" && nextMemory.correctStreak >= 2) {
-        difficult.delete(wordId);
-      } else if (result === "again") {
-        difficult.add(wordId);
-      }
+      mastered.delete(wordId);
+      difficult.add(wordId);
+      wrongBook.add(wordId);
 
       let streak = current.streak;
       if (current.lastStudyDate !== date) {
@@ -573,6 +839,7 @@ function App() {
         ...current,
         mastered: Array.from(mastered),
         difficult: Array.from(difficult),
+        wrongBook: Array.from(wrongBook),
         memory: { ...current.memory, [wordId]: nextMemory },
         totalReviews: current.totalReviews + 1,
         lastStudyDate: date,
@@ -594,6 +861,15 @@ function App() {
   const login = useCallback(
     async (username, password) => {
       await api.login(username, password);
+      setLoginMessage("");
+      await loadWorkspace();
+    },
+    [loadWorkspace],
+  );
+
+  const register = useCallback(
+    async (username, password, confirmPassword) => {
+      await api.register(username, password, confirmPassword);
       setLoginMessage("");
       await loadWorkspace();
     },
@@ -630,7 +906,8 @@ function App() {
       try {
         await api.saveProgress(workspace.activeBookId, progress);
         await loadWorkspace(bookId);
-        setToast("已切换词书。");
+        setPracticeSetupOpen(true);
+        setToast("词书已切换，请设置每天学习组数。");
       } catch (error) {
         setToast(error.message || "切换词书失败");
       }
@@ -686,7 +963,15 @@ function App() {
   }, []);
 
   if (authLoading) return <AuthLoading />;
-  if (!user) return <LoginScreen onLogin={login} message={loginMessage} />;
+  if (!user) {
+    return (
+      <LoginScreen
+        onLogin={login}
+        onRegister={register}
+        message={loginMessage}
+      />
+    );
+  }
   if (!workspace) return <AuthLoading />;
 
   const pageName = {
@@ -694,6 +979,7 @@ function App() {
     study: "闪卡训练",
     library: "我的词库",
     favorites: "收藏夹",
+    wrongbook: "错题本",
     review: "复习",
     reviewSession: "复习",
     progress: "学习记录",
@@ -729,6 +1015,8 @@ function App() {
               dailyCount={todayHistory.length}
               dailyGoal={progress.dailyGoal}
               groupSize={practiceConfig.size}
+              groupsPerDay={practiceConfig.groupsPerDay || 1}
+              activeQuiz={Boolean(progress.activeQuiz)}
               masteredCount={progress.mastered.length}
               totalWords={words.length}
               streak={progress.streak}
@@ -741,7 +1029,11 @@ function App() {
               )}
               word={todayWord}
               onStartStudy={startStudy}
-              onOpenPracticeSetup={() => setPracticeSetupOpen(true)}
+              onOpenPracticeSetup={() =>
+                progress.activeQuiz
+                  ? startStudy()
+                  : setPracticeSetupOpen(true)
+              }
               onSpeak={speak}
               onOpenLibrary={() => setView("library")}
               onOpenWord={openWordDetail}
@@ -755,56 +1047,15 @@ function App() {
               queue={studySession.queue}
               allWords={words}
               onAnswer={answerWord}
+              spellingDifficulty={studySession.spellingDifficulty || "easy"}
+              savedState={studySession.savedState}
+              onSessionChange={saveActiveQuiz}
               onExit={() => setView("home")}
               onSpeak={speak}
               autoPlay={settings.autoPlay}
               onOpenWord={openWordDetail}
               onPassWord={(wordId) => passWord(wordId)}
-              onQueueComplete={(passedIds = []) => {
-                setProgress((current) => {
-                  const existing = new Set(current.reviewPool);
-                  const passedSet = new Set([...current.passed, ...passedIds]);
-                  const additions = studySession.queue
-                    .map((word) => word.id)
-                    .filter(
-                      (wordId) =>
-                        !existing.has(wordId) && !passedSet.has(wordId),
-                    );
-                  const learningCursors = { ...current.learningCursors };
-                  if (!studySession.topic && studySession.queue.length) {
-                    const difficultyWords = getDifficultyWords(
-                      words,
-                      studySession.difficulty,
-                    );
-                    const completedIndexes = studySession.queue
-                      .map((word) =>
-                        difficultyWords.findIndex((item) => item.id === word.id),
-                      )
-                      .filter((index) => index >= 0);
-                    const nextCursor = completedIndexes.length
-                      ? Math.max(...completedIndexes) + 1
-                      : learningCursors[studySession.difficulty] || 0;
-                    learningCursors[studySession.difficulty] = Math.max(
-                      learningCursors[studySession.difficulty] || 0,
-                      nextCursor,
-                    );
-                  }
-                  return {
-                    ...current,
-                    reviewPool: [...current.reviewPool, ...additions],
-                    learningCursors,
-                  };
-                });
-                const topicName =
-                  studySession.topic === "difficult"
-                    ? "需复习词组"
-                    : topicMap[studySession.topic]?.label;
-                setToast(
-                  topicName
-                    ? `${topicName}已完成，并加入复习池。`
-                    : `本组 ${studySession.queue.length} 个词已加入复习池。`,
-                );
-              }}
+              onQueueComplete={completePracticeGroup}
               onNextGroup={addNextPracticeGroup}
             />
           ) : null}
@@ -815,7 +1066,6 @@ function App() {
               progress={progress}
               onSpeak={speak}
               onOpenWord={openWordDetail}
-              onStudyWord={(word) => startStudy(null, word)}
               favoriteIds={favoriteIds}
               passedIds={passedIds}
               onToggleFavorite={toggleFavorite}
@@ -829,13 +1079,22 @@ function App() {
               onOpenWord={openWordDetail}
               onSpeak={speak}
               onRemoveFavorite={toggleFavorite}
-              onStudyWord={(word) => startStudy(null, word)}
+            />
+          ) : null}
+
+          {view === "wrongbook" ? (
+            <WrongBookPage
+              words={wrongWords}
+              progress={progress}
+              onOpenWord={openWordDetail}
+              onSpeak={speak}
             />
           ) : null}
 
           {view === "review" ? (
             <ReviewPage
               words={reviewWords}
+              progress={progress}
               spellingDifficulty={reviewConfig.spellingDifficulty}
               onSpellingDifficultyChange={(spellingDifficulty) =>
                 setReviewConfig({ spellingDifficulty })
@@ -851,7 +1110,6 @@ function App() {
               queue={reviewSession.queue}
               allWords={words}
               spellingDifficulty={reviewSession.spellingDifficulty}
-              onAnswer={answerWord}
               onExit={() => setView("review")}
               onComplete={completeReview}
               onSpeak={speak}
@@ -881,6 +1139,8 @@ function App() {
               onResolveCorrection={(id, status) =>
                 api.resolveCorrection(id, status)
               }
+              onListUsers={api.listUsers}
+              onSetUserFrozen={api.setUserFrozen}
             />
           ) : null}
         </main>
@@ -909,7 +1169,6 @@ function App() {
           open={Boolean(detailWord)}
           onClose={() => setDetailWord(null)}
           onSpeak={speak}
-          onStudy={(word) => startStudy(word.topic, word)}
           favorite={detailWord ? favoriteIds.has(detailWord.id) : false}
           onToggleFavorite={() => {
             if (detailWord) toggleFavorite(detailWord.id);
@@ -920,6 +1179,8 @@ function App() {
         <PracticeSetupModal
           open={practiceSetupOpen}
           config={practiceConfig}
+          totalWords={words.length}
+          learnedCount={learnedCount}
           onStart={handlePracticeSetup}
           onClose={() => setPracticeSetupOpen(false)}
         />

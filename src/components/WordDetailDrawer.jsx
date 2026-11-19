@@ -1,8 +1,6 @@
 import { useEffect, useState } from "react";
 import {
-  ArrowRight,
   BookMarked,
-  BookOpen,
   Flag,
   GitBranch,
   Layers3,
@@ -27,7 +25,6 @@ export function WordDetailDrawer({
   open,
   onClose,
   onSpeak,
-  onStudy,
   favorite,
   onToggleFavorite,
   onSubmitCorrection,
@@ -267,19 +264,6 @@ export function WordDetailDrawer({
           </section>
         </div>
 
-        <footer className="detail-footer">
-          <button
-            className="primary-button"
-            onClick={() => {
-              onClose();
-              onStudy(word);
-            }}
-          >
-            <BookOpen size={17} />
-            用这个词开始训练
-            <ArrowRight size={16} />
-          </button>
-        </footer>
       </aside>
     </div>
   );

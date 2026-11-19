@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import {
   ArrowLeft,
   ArrowRight,
@@ -10,6 +10,7 @@ import {
   X,
 } from "lucide-react";
 import { buildOptions, seededShuffle } from "../lib/quizEngine";
+import { RussianKeyboard } from "./RussianKeyboard";
 
 const russianAlphabet = [..."абвгдеёжзийклмнопрстуфхцчшщъыьэюя"];
 
@@ -20,7 +21,7 @@ function buildSpellingTiles(word, difficulty, seed) {
     decoy: false,
   }));
 
-  if (difficulty === "hard") {
+  if (difficulty !== "hard") {
     const used = new Set([...word.ru.toLowerCase()]);
     const candidates = russianAlphabet.filter((letter) => !used.has(letter));
     const decoys = seededShuffle(candidates, `${seed}-${word.id}-decoys`)
@@ -179,16 +180,23 @@ function ReviewSpellingRound({
   onNext,
 }) {
   const [selectedIds, setSelectedIds] = useState([]);
+  const [typed, setTyped] = useState("");
   const [wrong, setWrong] = useState(false);
   const tiles = useMemo(
     () => buildSpellingTiles(word, difficulty, `${seed}-${index}`),
     [difficulty, index, seed, word],
   );
   const selectedSet = new Set(selectedIds);
-  const assembled = selectedIds
-    .map((id) => tiles.find((tile) => tile.id === id)?.character ?? "")
-    .join("");
-  const complete = selectedIds.length === tiles.filter((tile) => !tile.decoy).length;
+  const assembled =
+    difficulty === "hard"
+      ? typed
+      : selectedIds
+          .map((id) => tiles.find((tile) => tile.id === id)?.character ?? "")
+          .join("");
+  const complete =
+    difficulty === "hard"
+      ? typed.length > 0
+      : assembled.length >= [...word.ru].length;
 
   function toggleTile(tile) {
     if (wrong || selectedSet.has(tile.id)) return;
@@ -207,6 +215,7 @@ function ReviewSpellingRound({
   function retry() {
     setWrong(false);
     setSelectedIds([]);
+    setTyped("");
   }
 
   return (
@@ -224,7 +233,7 @@ function ReviewSpellingRound({
         <div className="review-question-top">
           <span>
             {difficulty === "easy" ? <PenLine size={15} /> : <Sparkles size={15} />}
-            {difficulty === "easy" ? "仅单词字母" : "含额外混淆字母"}
+            {difficulty === "easy" ? "普通模式 · 字母卡" : "困难模式 · 俄语键盘"}
           </span>
           <span>{word.pos}</span>
         </div>
@@ -241,20 +250,32 @@ function ReviewSpellingRound({
             <small>点击下方字母开始拼写</small>
           )}
         </div>
-        <div className="letter-bank">
-          {tiles.map((tile) => (
-            <button
-              className={`${selectedSet.has(tile.id) ? "used" : ""} ${
-                tile.decoy ? "decoy" : ""
-              }`}
-              disabled={wrong || selectedSet.has(tile.id)}
-              key={tile.id}
-              onClick={() => toggleTile(tile)}
-            >
-              {tile.character === " " ? "空格" : tile.character}
-            </button>
-          ))}
-        </div>
+        {difficulty === "hard" ? (
+          <RussianKeyboard
+            onKey={(letter) => {
+              if (!wrong) setTyped((current) => current + letter);
+            }}
+            onSpace={() => {
+              if (!wrong) setTyped((current) => `${current} `);
+            }}
+            onBackspace={() => {
+              if (!wrong) setTyped((current) => current.slice(0, -1));
+            }}
+          />
+        ) : (
+          <div className="letter-bank">
+            {tiles.map((tile) => (
+              <button
+                className={selectedSet.has(tile.id) ? "used" : ""}
+                disabled={wrong || selectedSet.has(tile.id)}
+                key={tile.id}
+                onClick={() => toggleTile(tile)}
+              >
+                {tile.character === " " ? "空格" : tile.character}
+              </button>
+            ))}
+          </div>
+        )}
 
         {wrong ? (
           <div className="review-spelling-feedback">
@@ -314,7 +335,6 @@ export function ReviewSession({
   queue,
   allWords,
   spellingDifficulty,
-  onAnswer,
   onExit,
   onComplete,
   onSpeak,
@@ -325,6 +345,7 @@ export function ReviewSession({
   const [seed] = useState(Date.now());
   const [stats, setStats] = useState({ correct: 0, wrong: 0 });
   const [finished, setFinished] = useState(false);
+  const wrongWordIdsRef = useRef(new Set());
   const word = queue[index];
 
   function recordAnswer(wordId, correct) {
@@ -332,7 +353,7 @@ export function ReviewSession({
       correct: current.correct + (correct ? 1 : 0),
       wrong: current.wrong + (correct ? 0 : 1),
     }));
-    onAnswer(wordId, correct ? "known" : "again");
+    if (!correct) wrongWordIdsRef.current.add(wordId);
   }
 
   function next() {
@@ -343,7 +364,10 @@ export function ReviewSession({
         return;
       }
       setFinished(true);
-      onComplete(queue.map((item) => item.id));
+      onComplete(
+        queue.map((item) => item.id),
+        Array.from(wrongWordIdsRef.current),
+      );
       return;
     }
     setIndex((current) => current + 1);

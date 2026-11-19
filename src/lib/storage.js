@@ -8,6 +8,12 @@ export const defaultProgress = {
   reviewPool: [],
   favorites: [],
   passed: [],
+  wrongBook: [],
+  activeQuiz: null,
+  studyPlan: {
+    groupsPerDay: 1,
+    groupSize: 10,
+  },
   learningCursors: {
     beginner: 0,
     intermediate: 0,
@@ -32,6 +38,15 @@ export function loadProgress() {
       reviewPool: Array.isArray(stored.reviewPool) ? stored.reviewPool : [],
       favorites: Array.isArray(stored.favorites) ? stored.favorites : [],
       passed: Array.isArray(stored.passed) ? stored.passed : [],
+      wrongBook: Array.isArray(stored.wrongBook) ? stored.wrongBook : [],
+      activeQuiz:
+        stored.activeQuiz && typeof stored.activeQuiz === "object"
+          ? stored.activeQuiz
+          : null,
+      studyPlan:
+        stored.studyPlan && typeof stored.studyPlan === "object"
+          ? { groupsPerDay: 1, groupSize: 10, ...stored.studyPlan }
+          : { groupsPerDay: 1, groupSize: 10 },
       learningCursors:
         stored.learningCursors && typeof stored.learningCursors === "object"
           ? { beginner: 0, intermediate: 0, advanced: 0, ...stored.learningCursors }

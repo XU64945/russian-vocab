@@ -17,9 +17,11 @@ import {
   X,
 } from "lucide-react";
 import { useWordbook } from "../context/WordbookContext";
+import { RussianKeyboard } from "./RussianKeyboard";
 import {
   createQuizState,
   quizReducer,
+  serializeQuizState,
 } from "../lib/quizEngine";
 
 const roundLabels = [
@@ -314,16 +316,21 @@ function SpellingQuestion({
   word,
   task,
   stage,
+  difficulty,
   lastAnswer,
   onAnswer,
   onContinue,
   onOpenWord,
 }) {
   const [selectedIds, setSelectedIds] = useState([]);
+  const [typed, setTyped] = useState("");
   const selectedSet = new Set(selectedIds);
-  const assembled = selectedIds
-    .map((id) => task.letters.find((letter) => letter.id === id)?.character ?? "")
-    .join("");
+  const assembled =
+    difficulty === "hard"
+      ? typed
+      : selectedIds
+          .map((id) => task.letters.find((letter) => letter.id === id)?.character ?? "")
+          .join("");
 
   function toggleLetter(letterId) {
     if (stage === "feedback" || selectedSet.has(letterId)) return;
@@ -332,7 +339,8 @@ function SpellingQuestion({
 
   function backspace() {
     if (stage === "feedback") return;
-    setSelectedIds((current) => current.slice(0, -1));
+    if (difficulty === "hard") setTyped((current) => current.slice(0, -1));
+    else setSelectedIds((current) => current.slice(0, -1));
   }
 
   const submitted = assembled.trim().toLowerCase() === word.ru.toLowerCase();
@@ -342,7 +350,11 @@ function SpellingQuestion({
       <div className="quiz-instruction">
         <span className="eyebrow-text dark">СОБЕРИТЕ СЛОВО</span>
         <h1>打乱字母，拼出俄语单词</h1>
-        <p>按顺序点击字母。答错后会回到第 1 轮重新学习。</p>
+        <p>
+          {difficulty === "hard"
+            ? "使用完整俄语键盘输入单词。答错后会回到第 1 轮重新学习。"
+            : "从字母卡中点击拼写；四个干扰字母与正确字母使用相同样式。"}
+        </p>
       </div>
 
       <article className="spelling-card">
@@ -365,29 +377,48 @@ function SpellingQuestion({
           )}
         </div>
 
-        <div className="letter-bank" aria-label="乱序字母">
-          {task.letters.map((letter) => (
-            <button
-              className={selectedSet.has(letter.id) ? "used" : ""}
-              disabled={stage === "feedback" || selectedSet.has(letter.id)}
-              key={letter.id}
-              onClick={() => toggleLetter(letter.id)}
-            >
-              {letter.character === " " ? "空格" : letter.character}
-            </button>
-          ))}
-        </div>
+        {difficulty === "hard" ? (
+          <RussianKeyboard
+            onKey={(letter) => {
+              if (stage !== "feedback") setTyped((current) => current + letter);
+            }}
+            onSpace={() => {
+              if (stage !== "feedback") setTyped((current) => `${current} `);
+            }}
+            onBackspace={backspace}
+          />
+        ) : (
+          <div className="letter-bank" aria-label="乱序字母">
+            {task.letters.map((letter) => (
+              <button
+                className={selectedSet.has(letter.id) ? "used" : ""}
+                disabled={stage === "feedback" || selectedSet.has(letter.id)}
+                key={letter.id}
+                onClick={() => toggleLetter(letter.id)}
+              >
+                {letter.character === " " ? "空格" : letter.character}
+              </button>
+            ))}
+          </div>
+        )}
 
         {stage === "question" ? (
           <div className="spelling-actions">
-            <button className="secondary-button" onClick={backspace} disabled={!selectedIds.length}>
+            <button
+              className="secondary-button"
+              onClick={backspace}
+              disabled={!selectedIds.length && !typed}
+            >
               <Delete size={16} />
               退格
             </button>
             <button
               className="secondary-button"
-              onClick={() => setSelectedIds([])}
-              disabled={!selectedIds.length}
+              onClick={() => {
+                setSelectedIds([]);
+                setTyped("");
+              }}
+              disabled={!selectedIds.length && !typed}
             >
               重置
             </button>
@@ -477,11 +508,20 @@ export function QuizSession({
   onQueueComplete,
   onNextGroup,
   onPassWord,
+  savedState,
+  onSessionChange,
+  spellingDifficulty,
 }) {
   const [state, dispatch] = useReducer(
     quizReducer,
     null,
-    () => createQuizState(queue, Date.now(), allWords),
+    () => createQuizState(
+      queue,
+      Date.now(),
+      allWords,
+      savedState,
+      spellingDifficulty,
+    ),
   );
   const completedRef = useRef(false);
   const word = state.active ? state.wordMap.get(state.active.wordId) : null;
@@ -499,14 +539,24 @@ export function QuizSession({
   }, [autoPlay, onSpeak, state.active?.round, state.stage, word]);
 
   useEffect(() => {
+    if (!onSessionChange) return;
+    onSessionChange(
+      state.stage === "complete" ? null : serializeQuizState(state),
+    );
+  }, [onSessionChange, state]);
+
+  useEffect(() => {
     if (state.stage !== "complete" || completedRef.current) return;
     completedRef.current = true;
-    onQueueComplete(Array.from(state.passedIds));
-  }, [onQueueComplete, state.passedIds, state.stage]);
+    onQueueComplete(
+      Array.from(state.passedIds),
+      Array.from(state.wrongWordIds),
+    );
+  }, [onQueueComplete, state.passedIds, state.stage, state.wrongWordIds]);
 
   function submitAnswer(selected, correct, selectedWord = null) {
     if (!word) return;
-    onAnswer(word.id, correct ? "known" : "again");
+    if (!correct) onAnswer(word.id, "again");
     dispatch({ type: "answer", selected, correct, selectedWord });
   }
 
@@ -573,6 +623,7 @@ export function QuizSession({
           word={word}
           task={state.active}
           stage={state.stage}
+          difficulty={state.spellingDifficulty}
           lastAnswer={state.lastAnswer}
           onAnswer={submitAnswer}
           onContinue={() =>

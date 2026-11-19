@@ -9,9 +9,11 @@ import {
   Volume2,
 } from "lucide-react";
 import { useWordbook } from "../context/WordbookContext";
+import { getWordMemory } from "../lib/srs";
 
 export function ReviewPage({
   words,
+  progress,
   spellingDifficulty,
   onSpellingDifficultyChange,
   onStartReview,
@@ -25,7 +27,7 @@ export function ReviewPage({
           <p className="intro-ru">ПОВТОРЕНИЕ</p>
           <h1>练习过的词，会在这里再见。</h1>
           <p className="intro-subtitle">
-            每组三轮练习结束后自动加入复习池。复习只做两轮：俄语选中文，再进行乱序拼写。
+            新词完成三轮后会按 1、2、4、15 天节点推送复习。每次复习包含词义与拼写两轮。
           </p>
         </div>
         <div className="review-count-card">
@@ -40,7 +42,7 @@ export function ReviewPage({
             <div className="review-mode-copy">
               <span className="eyebrow-text dark">СЛОЖНОСТЬ ПИСЬМА</span>
               <h2>选择拼写难度</h2>
-              <p>两种模式都会打乱字母顺序。困难模式会加入额外干扰字母。</p>
+              <p>普通模式混合正确字母与 4 个同样式干扰字母；困难模式使用完整俄语键盘。</p>
             </div>
             <div className="spelling-mode-options">
               <button
@@ -51,8 +53,8 @@ export function ReviewPage({
                   <PenLine size={18} />
                 </span>
                 <div>
-                  <strong>简单模式</strong>
-                  <small>只出现单词本身的全部字母</small>
+                  <strong>普通模式</strong>
+                  <small>正确字母加 4 个同样式干扰字母</small>
                 </div>
                 {spellingDifficulty === "easy" ? <Check size={17} /> : null}
               </button>
@@ -65,7 +67,7 @@ export function ReviewPage({
                 </span>
                 <div>
                   <strong>困难模式</strong>
-                  <small>额外加入 4 个不在单词中的字母</small>
+                  <small>使用完整俄语键盘输入</small>
                 </div>
                 {spellingDifficulty === "hard" ? <Check size={17} /> : null}
               </button>
@@ -91,6 +93,13 @@ export function ReviewPage({
             <div className="review-word-grid">
               {words.map((word) => {
                 const topic = topicMap[word.topic];
+                const memory = getWordMemory(progress, word.id);
+                const due = memory.dueAt
+                  ? new Intl.DateTimeFormat("zh-CN", {
+                      month: "numeric",
+                      day: "numeric",
+                    }).format(new Date(memory.dueAt))
+                  : "待安排";
                 return (
                   <article className="review-word-card" key={word.id}>
                     <button onClick={() => onSpeak(word.ru)} aria-label={`朗读 ${word.ru}`}>
@@ -103,6 +112,7 @@ export function ReviewPage({
                     <small style={{ background: topic.soft, color: topic.color }}>
                       {topic.label}
                     </small>
+                    <em>下次 {due}</em>
                   </article>
                 );
               })}

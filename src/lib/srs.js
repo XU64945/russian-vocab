@@ -1,5 +1,6 @@
-const MINUTE = 60 * 1000;
-const DAY = 24 * 60 * MINUTE;
+const DAY = 24 * 60 * 60 * 1000;
+
+export const REVIEW_SCHEDULE_DAYS = [1, 2, 4, 15, 30, 60, 120, 180];
 
 export const initialMemory = {
   repetitions: 0,
@@ -9,80 +10,121 @@ export const initialMemory = {
   ease: 2.5,
   dueAt: null,
   lastReviewedAt: null,
+  learnedAt: null,
+  reviewStage: -1,
+  reviewPasses: 0,
   status: "new",
 };
 
 export function getWordMemory(progress, wordId) {
-  const memory = progress.memory?.[wordId] || initialMemory;
-  if (progress.mastered?.includes(wordId) || memory.status === "mastered") {
-    return { ...memory, status: "mastered" };
-  }
-  if (memory.repetitions > 0) {
+  const memory = {
+    ...initialMemory,
+    ...(progress.memory?.[wordId] || {}),
+  };
+  if (memory.status === "mastered" && memory.reviewPasses < 2) {
     return { ...memory, status: "review" };
   }
-  return { ...memory, status: "new" };
+  return memory;
 }
 
 export function isWordDue(progress, wordId, now = Date.now()) {
   const memory = getWordMemory(progress, wordId);
-  return memory.status === "review" && Number(memory.dueAt) <= now;
+  return (
+    (memory.status === "review" || memory.status === "mastered") &&
+    Number(memory.dueAt) > 0 &&
+    Number(memory.dueAt) <= now
+  );
 }
 
-function roundInterval(value) {
-  if (value >= 14) return Math.round(value);
-  if (value >= 3) return Math.round(value * 2) / 2;
-  return Math.round(value * 4) / 4;
+function nextNodeDue(learnedAt, reviewStage, now) {
+  const nodeIndex = Math.min(
+    Math.max(0, reviewStage),
+    REVIEW_SCHEDULE_DAYS.length - 1,
+  );
+  const scheduled = learnedAt + REVIEW_SCHEDULE_DAYS[nodeIndex] * DAY;
+  return Math.max(scheduled, now + DAY);
+}
+
+export function recordPracticeComplete(
+  previousMemory,
+  { wrong = false, now = Date.now() } = {},
+) {
+  const previous = { ...initialMemory, ...previousMemory };
+  if (previous.learnedAt) {
+    return {
+      ...previous,
+      repetitions: previous.repetitions + 1,
+      correctStreak: 0,
+      lapses: previous.lapses + (wrong ? 1 : 0),
+      intervalDays: 1,
+      dueAt: now + DAY,
+      lastReviewedAt: now,
+      reviewStage: Math.max(0, previous.reviewStage),
+      status: "review",
+    };
+  }
+  const learnedAt = previous.learnedAt || now;
+  return {
+    ...previous,
+    repetitions: Math.max(1, previous.repetitions),
+    correctStreak: 0,
+    lapses: previous.lapses + (wrong ? 1 : 0),
+    intervalDays: 1,
+    dueAt: learnedAt + REVIEW_SCHEDULE_DAYS[0] * DAY,
+    lastReviewedAt: now,
+    learnedAt,
+    reviewStage: 0,
+    reviewPasses: 0,
+    status: "review",
+  };
+}
+
+export function markMistake(previousMemory, now = Date.now()) {
+  const previous = { ...initialMemory, ...previousMemory };
+  const learnedAt =
+    previous.learnedAt ||
+    previous.lastReviewedAt ||
+    (previous.repetitions ? now - DAY : null);
+  return {
+    ...previous,
+    correctStreak: 0,
+    lapses: previous.lapses + 1,
+    intervalDays: 1,
+    dueAt: now + DAY,
+    lastReviewedAt: now,
+    learnedAt,
+    reviewStage:
+      previous.reviewStage >= 0 ? previous.reviewStage : learnedAt ? 0 : -1,
+    status: learnedAt ? "review" : previous.status,
+  };
 }
 
 export function applyReview(previousMemory, result, now = Date.now()) {
+  if (result === "again") return markMistake(previousMemory, now);
+
   const previous = { ...initialMemory, ...previousMemory };
-
-  if (result === "known") {
-    const repetitions = previous.repetitions + 1;
-    const correctStreak = previous.correctStreak + 1;
-    let baseInterval;
-
-    if (repetitions === 1) baseInterval = 1;
-    else if (repetitions === 2) baseInterval = 3;
-    else if (repetitions === 3) baseInterval = 7;
-    else baseInterval = previous.intervalDays * previous.ease;
-
-    const lapsePenalty = Math.max(0.58, 1 - previous.lapses * 0.065);
-    const streakBoost = correctStreak >= 3 ? 1.12 : 1;
-    const intervalDays = Math.min(
-      180,
-      roundInterval(Math.max(0.75, baseInterval * lapsePenalty * streakBoost)),
-    );
-    const mastered = intervalDays >= 21 && correctStreak >= 3;
-
-    return {
-      repetitions,
-      correctStreak,
-      lapses: Math.max(0, previous.lapses - 1),
-      intervalDays,
-      ease: Math.min(3.25, previous.ease + 0.06),
-      dueAt: now + intervalDays * DAY,
-      lastReviewedAt: now,
-      status: mastered ? "mastered" : "review",
-    };
-  }
-
-  const lapses = previous.lapses + 1;
-  const intervalDays = Math.max(
-    0.01,
-    Math.min(0.75, previous.intervalDays * Math.max(0.12, 0.45 - lapses * 0.055)),
+  const learnedAt = previous.learnedAt || now;
+  const reviewStage = Math.min(
+    Math.max(0, previous.reviewStage + 1),
+    REVIEW_SCHEDULE_DAYS.length - 1,
   );
-  const recheckMinutes = Math.max(2, Math.round(15 / 1.65 ** (lapses - 1)));
+  const reviewPasses = previous.reviewPasses + 1;
+  const nextDueAt = nextNodeDue(learnedAt, reviewStage, now);
 
   return {
+    ...previous,
     repetitions: previous.repetitions + 1,
-    correctStreak: 0,
-    lapses,
-    intervalDays,
-    ease: Math.max(1.3, previous.ease - 0.18),
-    dueAt: now + recheckMinutes * MINUTE,
+    correctStreak: previous.correctStreak + 1,
+    intervalDays: Math.max(
+      1,
+      Math.round((nextDueAt - now) / DAY),
+    ),
+    dueAt: nextDueAt,
     lastReviewedAt: now,
-    status: "review",
+    learnedAt,
+    reviewStage,
+    reviewPasses,
+    status: reviewPasses >= 2 ? "mastered" : "review",
   };
 }
 
@@ -104,7 +146,9 @@ export function getWordStatus(progress, wordId) {
 }
 
 export function formatInterval(intervalDays) {
-  if (intervalDays < 1) return `${Math.max(1, Math.round(intervalDays * 24 * 60))} 分钟`;
+  if (intervalDays < 1) {
+    return `${Math.max(1, Math.round(intervalDays * 24 * 60))} 分钟`;
+  }
   if (intervalDays < 14) return `${Math.round(intervalDays)} 天`;
   return `${Math.round(intervalDays / 7)} 周`;
 }

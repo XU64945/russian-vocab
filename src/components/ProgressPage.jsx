@@ -201,7 +201,7 @@ export function ProgressPage({
             <div>
               <small>01 · ОЧЕРЕДЬ</small>
               <h3>到期复习优先</h3>
-              <p>每日任务先加载已到期的词；复习清完，才放出当天的新词额度。</p>
+              <p>完成三轮练习后，新词会在第 1、2、4、15 天按节点进入复习。</p>
             </div>
           </article>
           <article>
@@ -211,7 +211,7 @@ export function ProgressPage({
             <div>
               <small>02 · ИНТЕРВАЛ</small>
               <h3>答对后拉长</h3>
-              <p>连续答对会逐步延长间隔；形成长期记忆后进入“已掌握”。</p>
+              <p>完成练习后再通过两次复习，才会标记为“已掌握”；之后继续按 4、15 天等节点复习。</p>
             </div>
           </article>
           <article>
@@ -221,7 +221,7 @@ export function ProgressPage({
             <div>
               <small>03 · ВОЗВРАТ</small>
               <h3>答错后回补</h3>
-              <p>薄弱词缩短间隔、优先插队；错得越多，在本轮和队列中出现得越频繁。</p>
+              <p>答错不会清空复习阶段，但会在明天优先复习，并自动收进错题本、穿插回练习。</p>
             </div>
           </article>
         </div>

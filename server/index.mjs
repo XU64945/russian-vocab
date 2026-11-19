@@ -44,6 +44,12 @@ const defaultProgress = () => ({
   reviewPool: [],
   favorites: [],
   passed: [],
+  wrongBook: [],
+  activeQuiz: null,
+  studyPlan: {
+    groupsPerDay: 1,
+    groupSize: 10,
+  },
   learningCursors: {
     beginner: 0,
     intermediate: 0,
@@ -60,6 +66,7 @@ const seedUsers = [
     id: "admin-root",
     username: "13144666848",
     role: "admin",
+    frozen: false,
     passwordSalt: "3aa5564335f1a14591e9ced9cf1c765b",
     passwordHash:
       "5c9c105876382a16d4735b26ecb55f75bacf0cb5458069a3e2d620b8cda4b5e0c92b9b5d6e07674255507d16b239447a73162371ab38bc97dab2b558a940634b",
@@ -68,6 +75,7 @@ const seedUsers = [
     id: "user-lvziyi",
     username: "lvziyi",
     role: "user",
+    frozen: false,
     passwordSalt: "70c1bf873fc4e9ecfbc88388f7bd9e89",
     passwordHash:
       "34ad1a9d54344847bcbdca50e440b8c774259484bdf8822809b14ceb6955105e9716164b20828182defa0f3117f5629e16145c3e724609a0a64e4735793b6130",
@@ -144,6 +152,10 @@ function migrateBuiltInBooks(db) {
     }
   }
   for (const user of db.users) {
+    if (typeof user.frozen !== "boolean") {
+      user.frozen = false;
+      changed = true;
+    }
     const state = db.progressByUser[user.id] || {
       activeBookId: db.wordbooks[0]?.id,
       books: {},
@@ -208,7 +220,9 @@ function sessionUser(request) {
     (item) => item.token === token && new Date(item.expiresAt).getTime() > Date.now(),
   );
   if (!session) return null;
-  return db.users.find((user) => user.id === session.userId) || null;
+  return (
+    db.users.find((user) => user.id === session.userId && !user.frozen) || null
+  );
 }
 
 function publicUser(user) {
@@ -390,6 +404,10 @@ async function handleApi(request, response, url) {
       sendJson(response, 401, { error: "账号或密码错误" });
       return true;
     }
+    if (user.frozen) {
+      sendJson(response, 403, { error: "该账号已被管理员冻结" });
+      return true;
+    }
     const token = randomBytes(32).toString("hex");
     db.sessions.push({
       token,
@@ -398,6 +416,59 @@ async function handleApi(request, response, url) {
     });
     saveDb();
     sendJson(response, 200, { user: publicUser(user) }, {
+      "Set-Cookie": sessionCookie(token),
+    });
+    return true;
+  }
+
+  if (url.pathname === "/api/auth/register" && request.method === "POST") {
+    const body = await readJsonBody(request);
+    const username = String(body.username || "").trim();
+    const password = String(body.password || "");
+    if (!/^[\p{L}\p{N}_-]{3,32}$/u.test(username)) {
+      sendJson(response, 400, {
+        error: "用户名需为 3—32 位字母、数字、下划线或短横线",
+      });
+      return true;
+    }
+    if (password.length < 8) {
+      sendJson(response, 400, { error: "密码至少需要 8 位" });
+      return true;
+    }
+    if (password !== String(body.confirmPassword || "")) {
+      sendJson(response, 400, { error: "两次输入的密码不一致" });
+      return true;
+    }
+    if (db.users.some((item) => item.username === username)) {
+      sendJson(response, 409, { error: "用户名已存在，请换一个" });
+      return true;
+    }
+    const user = {
+      id: `user-${Date.now()}-${randomBytes(3).toString("hex")}`,
+      username,
+      role: "user",
+      frozen: false,
+      createdAt: new Date().toISOString(),
+      ...passwordRecord(password),
+    };
+    db.users.push(user);
+    const state = {
+      activeBookId: db.wordbooks[0]?.id,
+      books: {},
+      progressUpdatedAt: {},
+    };
+    for (const book of db.wordbooks) {
+      state.books[book.id] = defaultProgress();
+    }
+    db.progressByUser[user.id] = state;
+    const token = randomBytes(32).toString("hex");
+    db.sessions.push({
+      token,
+      userId: user.id,
+      expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+    });
+    saveDb();
+    sendJson(response, 201, { user: publicUser(user) }, {
       "Set-Cookie": sessionCookie(token),
     });
     return true;
@@ -581,6 +652,68 @@ async function handleApi(request, response, url) {
       correction.status === "resolved" ? new Date().toISOString() : null;
     saveDb();
     sendJson(response, 200, { ok: true });
+    return true;
+  }
+
+  if (url.pathname === "/api/admin/users" && request.method === "GET") {
+    if (user.role !== "admin") {
+      sendJson(response, 403, { error: "只有管理员可以查看账号" });
+      return true;
+    }
+    const today = new Date().toISOString().slice(0, 10);
+    const users = db.users.map((account) => {
+      const state = db.progressByUser[account.id];
+      const activeBookId = state?.activeBookId;
+      const progress = state?.books?.[activeBookId] || defaultProgress();
+      return {
+        id: account.id,
+        username: account.username,
+        role: account.role,
+        frozen: Boolean(account.frozen),
+        createdAt: account.createdAt,
+        activeBookTitle:
+          db.wordbooks.find((book) => book.id === activeBookId)?.title || null,
+        learned: new Set([
+          ...(progress.reviewPool || []),
+          ...(progress.mastered || []),
+          ...(progress.passed || []),
+        ]).size,
+        mastered: (progress.mastered || []).length,
+        wrong: (progress.wrongBook || []).length,
+        todayAnswers: (progress.history || []).filter(
+          (entry) => entry.date === today,
+        ).length,
+        totalAnswers: (progress.history || []).length,
+        lastStudyAt: state?.progressUpdatedAt?.[activeBookId] || null,
+      };
+    });
+    sendJson(response, 200, { users });
+    return true;
+  }
+
+  const adminUserMatch = url.pathname.match(/^\/api\/admin\/users\/([^/]+)$/);
+  if (adminUserMatch && request.method === "PATCH") {
+    if (user.role !== "admin") {
+      sendJson(response, 403, { error: "只有管理员可以管理账号" });
+      return true;
+    }
+    const targetId = decodeURIComponent(adminUserMatch[1]);
+    if (targetId === user.id) {
+      sendJson(response, 400, { error: "不能冻结当前管理员账号" });
+      return true;
+    }
+    const target = db.users.find((account) => account.id === targetId);
+    if (!target) {
+      sendJson(response, 404, { error: "账号不存在" });
+      return true;
+    }
+    const body = await readJsonBody(request);
+    target.frozen = Boolean(body.frozen);
+    if (target.frozen) {
+      db.sessions = db.sessions.filter((session) => session.userId !== target.id);
+    }
+    saveDb();
+    sendJson(response, 200, { ok: true, frozen: target.frozen });
     return true;
   }
 

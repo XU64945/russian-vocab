@@ -1,4 +1,5 @@
 import {
+  AlertTriangle,
   BarChart3,
   Brain,
   BookOpen,
@@ -14,6 +15,7 @@ const navItems = [
   { id: "study", label: "闪卡训练", ru: "Карточки", icon: BookOpen },
   { id: "library", label: "我的词库", ru: "Словарь", icon: LibraryBig },
   { id: "favorites", label: "收藏夹", ru: "Избранное", icon: Star },
+  { id: "wrongbook", label: "错题本", ru: "Ошибки", icon: AlertTriangle },
   { id: "review", label: "复习", ru: "Повторение", icon: Brain },
   { id: "progress", label: "学习记录", ru: "Прогресс", icon: BarChart3 },
 ];
@@ -37,7 +39,7 @@ export function Sidebar({
     ...visibleNavItems.filter(
       (item) =>
         item.id !== "study" &&
-        (user?.role === "admin" ? item.id !== "progress" : true),
+        item.id !== "progress",
     ),
   ];
 

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import {
   AlertCircle,
+  Ban,
   BookPlus,
   Check,
   FileJson,
@@ -8,6 +9,7 @@ import {
   Pencil,
   RefreshCw,
   ShieldCheck,
+  UserCheck,
   Upload,
   Users,
   X,
@@ -304,12 +306,17 @@ export function AdminPage({
   onUpdateWord,
   onResolveCorrection,
   onListCorrections,
+  onListUsers,
+  onSetUserFrozen,
 }) {
   const [modalOpen, setModalOpen] = useState(false);
   const [corrections, setCorrections] = useState([]);
   const [correctionsLoading, setCorrectionsLoading] = useState(true);
   const [correctionError, setCorrectionError] = useState("");
   const [editingCorrection, setEditingCorrection] = useState(null);
+  const [users, setUsers] = useState([]);
+  const [usersLoading, setUsersLoading] = useState(true);
+  const [userError, setUserError] = useState("");
 
   async function loadCorrections() {
     setCorrectionsLoading(true);
@@ -324,8 +331,22 @@ export function AdminPage({
     }
   }
 
+  async function loadUsers() {
+    setUsersLoading(true);
+    setUserError("");
+    try {
+      const data = await onListUsers();
+      setUsers(data.users || []);
+    } catch (error) {
+      setUserError(error.message || "账号列表读取失败");
+    } finally {
+      setUsersLoading(false);
+    }
+  }
+
   useEffect(() => {
     loadCorrections();
+    loadUsers();
   }, []);
 
   const openCorrections = corrections.filter(
@@ -456,6 +477,63 @@ export function AdminPage({
           <div className="admin-correction-empty">
             <Check size={18} />
             暂无待处理纠错
+          </div>
+        )}
+      </section>
+
+      <section className="admin-correction-section admin-users-section">
+        <div className="section-heading">
+          <div>
+            <span className="eyebrow-text dark">АККАУНТЫ</span>
+            <h2>账号与学习情况</h2>
+          </div>
+          <button className="text-button" onClick={loadUsers}>
+            <RefreshCw size={15} />
+            刷新
+          </button>
+        </div>
+        {userError ? (
+          <div className="login-error">{userError}</div>
+        ) : usersLoading ? (
+          <div className="admin-correction-empty">正在读取账号…</div>
+        ) : (
+          <div className="admin-user-list">
+            {users.map((account) => (
+              <article className={`admin-user-card ${account.frozen ? "frozen" : ""}`} key={account.id}>
+                <span className="admin-user-avatar">
+                  {account.username.slice(0, 1).toUpperCase()}
+                </span>
+                <div>
+                  <div className="admin-user-heading">
+                    <strong>{account.username}</strong>
+                    <span>{account.role === "admin" ? "管理员" : "普通用户"}</span>
+                    {account.frozen ? <em>已冻结</em> : null}
+                  </div>
+                  <p>
+                    {account.activeBookTitle || "尚未选择词书"} · 已学 {account.learned} 词 ·
+                    已掌握 {account.mastered} · 错题 {account.wrong}
+                  </p>
+                  <small>
+                    今日作答 {account.todayAnswers} 次 · 累计 {account.totalAnswers} 次
+                  </small>
+                </div>
+                <button
+                  className={account.frozen ? "secondary-button" : "danger-outline-button"}
+                  disabled={account.id === user.id}
+                  onClick={async () => {
+                    try {
+                      await onSetUserFrozen(account.id, !account.frozen);
+                      await loadUsers();
+                    } catch (error) {
+                      setUserError(error.message || "账号状态更新失败");
+                    }
+                  }}
+                >
+                  {account.frozen ? <UserCheck size={15} /> : <Ban size={15} />}
+                  {account.frozen ? "解除冻结" : "冻结账号"}
+                </button>
+              </article>
+            ))}
           </div>
         )}
       </section>

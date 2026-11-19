@@ -24,6 +24,13 @@ export const api = {
     });
   },
 
+  register(username, password, confirmPassword) {
+    return request("/api/auth/register", {
+      method: "POST",
+      body: JSON.stringify({ username, password, confirmPassword }),
+    });
+  },
+
   me() {
     return request("/api/auth/me");
   },
@@ -92,5 +99,16 @@ export const api = {
         body: JSON.stringify(word),
       },
     );
+  },
+
+  listUsers() {
+    return request("/api/admin/users");
+  },
+
+  setUserFrozen(userId, frozen) {
+    return request(`/api/admin/users/${encodeURIComponent(userId)}`, {
+      method: "PATCH",
+      body: JSON.stringify({ frozen }),
+    });
   },
 };

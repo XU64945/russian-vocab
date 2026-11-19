@@ -37,6 +37,12 @@ const defaultProgress = () => ({
   reviewPool: [],
   favorites: [],
   passed: [],
+  wrongBook: [],
+  activeQuiz: null,
+  studyPlan: {
+    groupsPerDay: 1,
+    groupSize: 10,
+  },
   learningCursors: {
     beginner: 0,
     intermediate: 0,
@@ -190,6 +196,16 @@ async function ensureSchema(db) {
       "CREATE INDEX IF NOT EXISTS idx_corrections_status ON corrections(status, created_at)",
     ),
   ]);
+  const userColumns = await db.prepare("PRAGMA table_info(users)").all();
+  if (!userColumns.results.some((column) => column.name === "frozen")) {
+    try {
+      await db
+        .prepare("ALTER TABLE users ADD COLUMN frozen INTEGER NOT NULL DEFAULT 0")
+        .run();
+    } catch (error) {
+      if (!/duplicate column/i.test(error?.message || "")) throw error;
+    }
+  }
 }
 
 async function ensureSeed(db) {
@@ -282,7 +298,7 @@ async function getSessionUser(request, db) {
       `SELECT u.id, u.username, u.role
        FROM sessions s
        JOIN users u ON u.id = s.user_id
-       WHERE s.token_hash = ? AND s.expires_at > ?`,
+       WHERE s.token_hash = ? AND s.expires_at > ? AND u.frozen = 0`,
     )
     .bind(tokenHash, new Date().toISOString())
     .first();
@@ -479,6 +495,9 @@ async function handleApi(context) {
     if (!user || !constantTimeEqual(passwordHash, user.password_hash)) {
       return jsonResponse(401, { error: "账号或密码错误" });
     }
+    if (user.frozen) {
+      return jsonResponse(403, { error: "该账号已被管理员冻结" });
+    }
     const token = randomHex(32);
     const tokenHash = await hashToken(token);
     const expiresAt = new Date(
@@ -497,6 +516,59 @@ async function handleApi(context) {
     return jsonResponse(
       200,
       { user: publicUser(user) },
+      { "Set-Cookie": sessionCookie(token) },
+    );
+  }
+
+  if (path === "auth/register" && request.method === "POST") {
+    const body = await request.json();
+    const username = String(body.username || "").trim();
+    const password = String(body.password || "");
+    if (!/^[\p{L}\p{N}_-]{3,32}$/u.test(username)) {
+      return jsonResponse(400, {
+        error: "用户名需为 3—32 位字母、数字、下划线或短横线",
+      });
+    }
+    if (password.length < 8) {
+      return jsonResponse(400, { error: "密码至少需要 8 位" });
+    }
+    if (password !== String(body.confirmPassword || "")) {
+      return jsonResponse(400, { error: "两次输入的密码不一致" });
+    }
+    const existing = await db
+      .prepare("SELECT id FROM users WHERE username = ?")
+      .bind(username)
+      .first();
+    if (existing) {
+      return jsonResponse(409, { error: "用户名已存在，请换一个" });
+    }
+    const salt = randomHex(16);
+    const hash = await derivePassword(password, salt);
+    const id = `user-${Date.now()}-${randomHex(3)}`;
+    const now = new Date().toISOString();
+    await db
+      .prepare(
+        `INSERT INTO users
+          (id, username, role, password_salt, password_hash,
+           password_iterations, created_at, frozen)
+         VALUES (?, ?, 'user', ?, ?, ?, ?, 0)`,
+      )
+      .bind(id, username, salt, hash, PBKDF2_ITERATIONS, now)
+      .run();
+    const token = randomHex(32);
+    const tokenHash = await hashToken(token);
+    const expiresAt = new Date(
+      Date.now() + SESSION_DAYS * 86400 * 1000,
+    ).toISOString();
+    await db
+      .prepare(
+        "INSERT INTO sessions (token_hash, user_id, expires_at) VALUES (?, ?, ?)",
+      )
+      .bind(tokenHash, id, expiresAt)
+      .run();
+    return jsonResponse(
+      201,
+      { user: { id, username, role: "user" } },
       { "Set-Cookie": sessionCookie(token) },
     );
   }
@@ -735,6 +807,84 @@ async function handleApi(context) {
       )
       .run();
     return jsonResponse(200, { ok: true });
+  }
+
+  if (path === "admin/users" && request.method === "GET") {
+    if (user.role !== "admin") {
+      return jsonResponse(403, { error: "只有管理员可以查看账号" });
+    }
+    const [userRows, progressRows, bookRows] = await Promise.all([
+      db
+        .prepare(
+          "SELECT id, username, role, frozen, created_at FROM users ORDER BY created_at",
+        )
+        .all(),
+      db
+        .prepare(
+          "SELECT user_id, book_id, data_json, active, updated_at FROM progress",
+        )
+        .all(),
+      db.prepare("SELECT id, title FROM wordbooks").all(),
+    ]);
+    const bookMap = new Map(bookRows.results.map((book) => [book.id, book.title]));
+    const progressByUser = new Map();
+    for (const row of progressRows.results) {
+      const list = progressByUser.get(row.user_id) || [];
+      list.push(row);
+      progressByUser.set(row.user_id, list);
+    }
+    const today = new Date().toISOString().slice(0, 10);
+    const users = userRows.results.map((row) => {
+      const rows = progressByUser.get(row.id) || [];
+      const active = rows.find((item) => item.active) || rows[0];
+      const progress = active?.data_json ? JSON.parse(active.data_json) : {};
+      const todayEntries = (progress.history || []).filter(
+        (entry) => entry.date === today,
+      );
+      return {
+        id: row.id,
+        username: row.username,
+        role: row.role,
+        frozen: Boolean(row.frozen),
+        createdAt: row.created_at,
+        activeBookTitle: active ? bookMap.get(active.book_id) : null,
+        learned: new Set([
+          ...(progress.reviewPool || []),
+          ...(progress.mastered || []),
+          ...(progress.passed || []),
+        ]).size,
+        mastered: (progress.mastered || []).length,
+        wrong: (progress.wrongBook || []).length,
+        todayAnswers: todayEntries.length,
+        totalAnswers: (progress.history || []).length,
+        lastStudyAt: active?.updated_at || null,
+      };
+    });
+    return jsonResponse(200, { users });
+  }
+
+  const adminUserMatch = path.match(/^admin\/users\/([^/]+)$/);
+  if (adminUserMatch && request.method === "PATCH") {
+    if (user.role !== "admin") {
+      return jsonResponse(403, { error: "只有管理员可以管理账号" });
+    }
+    const targetId = decodeURIComponent(adminUserMatch[1]);
+    if (targetId === user.id) {
+      return jsonResponse(400, { error: "不能冻结当前管理员账号" });
+    }
+    const body = await request.json();
+    const frozen = body.frozen ? 1 : 0;
+    await db
+      .prepare("UPDATE users SET frozen = ? WHERE id = ?")
+      .bind(frozen, targetId)
+      .run();
+    if (frozen) {
+      await db
+        .prepare("DELETE FROM sessions WHERE user_id = ?")
+        .bind(targetId)
+        .run();
+    }
+    return jsonResponse(200, { ok: true, frozen: Boolean(frozen) });
   }
 
   if (path === "wordbooks" && request.method === "GET") {

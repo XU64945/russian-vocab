@@ -1,4 +1,4 @@
-import { ArrowRight, Star, Volume2 } from "lucide-react";
+import { Star, Volume2 } from "lucide-react";
 import { useWordbook } from "../context/WordbookContext";
 
 export function FavoritesPage({
@@ -6,7 +6,6 @@ export function FavoritesPage({
   onOpenWord,
   onSpeak,
   onRemoveFavorite,
-  onStudyWord,
 }) {
   const { topicMap } = useWordbook();
 
@@ -59,10 +58,7 @@ export function FavoritesPage({
                     <Volume2 size={15} />
                     朗读
                   </button>
-                  <button onClick={() => onStudyWord(word)}>
-                    单独练习
-                    <ArrowRight size={15} />
-                  </button>
+                  <span>收藏词不单独插入练习</span>
                 </footer>
               </article>
             );
